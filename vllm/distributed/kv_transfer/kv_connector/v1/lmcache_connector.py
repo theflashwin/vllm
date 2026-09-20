@@ -142,6 +142,7 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
                 engine.current_layer = 0
             if hasattr(engine, "layerwise_retrievers"):
                 engine.layerwise_retrievers = []
+            engine.layerwise_storers = []
 
     def start_load_kv(self, forward_context: "ForwardContext", **kwargs: Any) -> None:
         """Start loading the KV cache from the connector to vLLM's paged
@@ -196,12 +197,7 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
         )
 
     def wait_for_save(self):
-        """Block until all the save operations is done. This is called
-        as the forward context exits to ensure that the async saving
-        from save_kv_layer is complete before finishing the forward.
-
-        This prevents overwrites of paged KV buffer before saving done.
-        """
+        """Submit or drain saves through the LMCache adapter."""
         self._lmcache_engine.wait_for_save()
 
     def get_finished(

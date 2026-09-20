@@ -606,6 +606,7 @@ class LMCacheConnectorV1Impl:
 
         self.async_loading = config.enable_async_loading
         self.layerwise_retrievers: list[Generator[torch.Tensor | None, None, None]] = []
+        self.layerwise_storers: list[Generator[Any, None, None]] = []
         self._stats_monitor = LMCStatsMonitor.GetOrCreate()
         if role == KVConnectorRole.SCHEDULER:
             # Create lookup client using factory
@@ -794,10 +795,13 @@ class LMCacheConnectorV1Impl:
         The layerwise hooks fire during every forward once metadata is
         bound, while start_load_kv may run after the forward launch on
         steps without sync loads (SchedulerOutput.has_sync_kv_loads), so
-        the per-step state they consume must be reset here.
+        the per-step state they consume must be reset here. The save-side
+        storers are reset too: wait_for_save may run on steps without a
+        forward, where no save_kv_layer call recreates them.
         """
         self.current_layer = 0
         self.layerwise_retrievers = []
+        self.layerwise_storers = []
 
     @_lmcache_nvtx_annotate
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):

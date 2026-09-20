@@ -31,7 +31,7 @@ The class provides the following primitives:
         wait_for_layer_load() - blocks until layer i load is done
 
         save_kv_layer() - starts saving KV for layer i (maybe async)
-        wait_for_save() - blocks until all saves are done
+        wait_for_save() - submits saves and performs required synchronization
 
         get_transfer_results() - returns async send/receive completions and
             receive failures in one snapshot.
@@ -355,12 +355,17 @@ class KVConnectorBase_V1(ABC):
         pass
 
     @abstractmethod
-    def wait_for_save(self):
-        """Block until all the save operations is done. This is called
-        as the forward context exits to ensure that the async saving
-        from save_kv_layer is complete before finishing the forward.
+    def wait_for_save(self) -> None:
+        """Submit this step's saves and perform required synchronization.
 
-        This prevents overwrites of paged KV buffer before saving done.
+        Called once per step after all model KV writes have been issued,
+        including draft-model writes and steps without a forward. Metadata
+        remains bound until this hook returns. Implementations must not assume
+        save_kv_layer ran and must no-op when there is no save work.
+
+        Transfers may remain in flight if the connector keeps their source
+        blocks alive until completion is reported to the scheduler. Otherwise,
+        synchronize saves here before the source buffers can be overwritten.
         """
         pass
 
