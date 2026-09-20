@@ -21,7 +21,7 @@ def _make_connector(
     backend.handle_preemptions.side_effect = lambda _: events.append("handle")
     backend.bind_connector_metadata.side_effect = lambda _: events.append("bind")
     backend.start_load_kv.side_effect = lambda *_args, **_kwargs: events.append("start")
-    backend.wait_for_save.side_effect = lambda: events.append("save")
+    backend.finalize_saves.side_effect = lambda: events.append("save")
     backend.get_transfer_results.return_value = KVConnectorTransferResults()
     backend.get_block_ids_with_load_errors.return_value = set()
     backend.get_kv_connector_stats.return_value = None
@@ -96,7 +96,7 @@ def test_no_forward_starts_deferred_load_once(monkeypatch: pytest.MonkeyPatch):
 
     connector.no_forward(_scheduler_output(False))  # type: ignore[arg-type]
 
-    # wait_for_save runs on no-forward steps too: the scheduler can emit
+    # finalize_saves runs on no-forward steps too: the scheduler can emit
     # empty steps purely to drain connector work (e.g. final stores of
-    # finished requests), and those stores are submitted in wait_for_save.
+    # finished requests), and those stores are submitted in finalize_saves.
     assert events == ["handle", "bind", "start", "save", "clear"]

@@ -136,7 +136,7 @@ class _LegacyConnector(KVConnectorBase_V1):
     ) -> None:
         pass
 
-    def wait_for_save(self) -> None:
+    def finalize_saves(self) -> None:
         pass
 
     def get_num_new_matched_tokens(

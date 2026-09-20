@@ -31,7 +31,7 @@ The class provides the following primitives:
         wait_for_layer_load() - blocks until layer i load is done
 
         save_kv_layer() - starts saving KV for layer i (maybe async)
-        wait_for_save() - submits saves and performs required synchronization
+        finalize_saves() - submits saves and performs required synchronization
 
         get_transfer_results() - returns async send/receive completions and
             receive failures in one snapshot.
@@ -354,8 +354,7 @@ class KVConnectorBase_V1(ABC):
         """
         pass
 
-    @abstractmethod
-    def wait_for_save(self) -> None:
+    def finalize_saves(self) -> None:
         """Submit this step's saves and perform required synchronization.
 
         Called once per step after all model KV writes have been issued,
@@ -366,8 +365,17 @@ class KVConnectorBase_V1(ABC):
         Transfers may remain in flight if the connector keeps their source
         blocks alive until completion is reported to the scheduler. Otherwise,
         synchronize saves here before the source buffers can be overwritten.
+
+        The default delegates to the legacy wait_for_save hook for connectors
+        that have not migrated. New implementations should override this method.
         """
-        pass
+        self.wait_for_save()
+
+    def wait_for_save(self) -> None:
+        """Legacy save hook and alias for callers that have not migrated."""
+        if type(self).finalize_saves is KVConnectorBase_V1.finalize_saves:
+            raise NotImplementedError("Implement finalize_saves()")
+        self.finalize_saves()
 
     def get_finished(
         self, finished_req_ids: set[str]

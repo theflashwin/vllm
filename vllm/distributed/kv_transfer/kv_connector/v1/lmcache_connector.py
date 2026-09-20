@@ -196,8 +196,8 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
             layer_name, kv_layer, attn_metadata, **kwargs
         )
 
-    def wait_for_save(self):
-        """Submit or drain saves through the LMCache adapter."""
+    def finalize_saves(self):
+        """Finalize saves through the LMCache adapter's legacy hook."""
         self._lmcache_engine.wait_for_save()
 
     def get_finished(

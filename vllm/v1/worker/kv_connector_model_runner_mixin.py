@@ -51,13 +51,13 @@ class KVConnectorModelRunnerMixin:
 
     @staticmethod
     def finalize_kv_connector() -> None:
-        """Finalize the KV connector: wait_for_save and clear metadata.
+        """Finalize the KV connector: finalize_saves and clear metadata.
 
         Call after draft model forward when defer_finalize=True was used.
         """
         if has_kv_transfer_group():
             kv_connector = get_kv_transfer_group()
-            kv_connector.wait_for_save()
+            kv_connector.finalize_saves()
             kv_connector.clear_connector_metadata()
 
     # This context manager must be used within an active forward context.
@@ -89,7 +89,7 @@ class KVConnectorModelRunnerMixin:
             if start_after_forward:
                 kv_connector.start_load_kv(get_forward_context())
             if not defer_finalize:
-                kv_connector.wait_for_save()
+                kv_connector.finalize_saves()
 
             transfer_results = kv_connector.get_transfer_results(
                 scheduler_output.finished_req_ids

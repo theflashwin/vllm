@@ -129,7 +129,7 @@ class DummyKVConnector(KVConnectorBase_V1):
     ) -> None:
         pass
 
-    def wait_for_save(self):
+    def finalize_saves(self):
         pass
 
 
