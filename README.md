@@ -19,6 +19,15 @@ For events, please visit [vllm.ai/events](https://vllm.ai/events) to join us.
 
 ---
 
+## Research Project
+
+This fork supports **Workload and Topology Aware KV Cache Migration on
+vLLM**, a research project for CS 6222: Systems for Machine Learning at
+Georgia Tech.
+
+See the [Notion design document](https://www.notion.so/Workload-and-Topology-Aware-KV-Cache-Migration-on-vLLM-3e189d71d61480bb8233fdd702f1dce1)
+for the project design.
+
 ## About
 
 vLLM is a fast and easy-to-use library for LLM inference and serving.
