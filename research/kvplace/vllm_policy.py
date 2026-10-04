@@ -50,6 +50,7 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         self._deadline: dict[str, float] = {}
         self._final: set[str] = set()
         self._last_use: dict[str, float] = {}
+        self._latest_turn: dict[str, int] = {}
         self.hints_received = 0
 
     def _observe(self, keys: Iterable[OffloadKey], hint: ReuseHint | None) -> None:
@@ -99,13 +100,17 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
             if _LOG_HINTS:
                 logger.info("kvplace hint %s (req %s)", hint, req_context.req_id)
             sid = hint.session_id
-            now = self._clock()
-            self._last_use[sid] = now
-            self._deadline.pop(sid, None)
-            if hint.final:
-                self._final.add(sid)
-            elif hint.expected_reuse_s is not None:
-                self._deadline[sid] = now + hint.expected_reuse_s
+            if hint.turn >= self._latest_turn.get(sid, -1):
+                self._latest_turn[sid] = hint.turn
+                now = self._clock()
+                self._last_use[sid] = now
+                self._deadline.pop(sid, None)
+                if hint.final:
+                    self._final.add(sid)
+                else:
+                    self._final.discard(sid)
+                    if hint.expected_reuse_s is not None:
+                        self._deadline[sid] = now + hint.expected_reuse_s
             for keys in key_groups:
                 self._observe(keys, hint)
         super().on_request_finished(
@@ -124,6 +129,7 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         self._deadline.clear()
         self._final.clear()
         self._last_use.clear()
+        self._latest_turn.clear()
 
     @override
     def evict(

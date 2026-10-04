@@ -83,10 +83,11 @@ block for Qwen2.5-7B. The default 10 GB is about 10.9k blocks, close to the
 - **Timing gap, resolved with hint-only requests:** the agent learns which
   tool it's calling only *after* the response, but hints are attached at
   submission. With a post-response predictor (`tool`), the turn's request
-  carries no hint. Right after the response, `replay.py` sends a **hint-only
-  request**: the same prompt plus padding up to one new offload block,
-  `max_tokens=1`, with the hint. It runs concurrently with the tool and never
-  delays the next turn.
+  carries its session ID with no reuse estimate. This associates newly stored
+  CPU blocks with the session. Right after the response, `replay.py` sends a
+  **hint-only request**: the same prompt plus padding up to one new offload
+  block, `max_tokens=1`, with the reuse estimate. It runs concurrently with
+  the tool and does not wait before sending the next turn.
   - **Why the padding:** the tiering manager's `on_new_request` doesn't create
     the CPU tier's per-request state; that only happens on a CPU store or
     load. A hint-only request whose prefix is all GPU hits would therefore
@@ -95,7 +96,9 @@ block for Qwen2.5-7B. The default 10 GB is about 10.9k blocks, close to the
     documents this. Storing one fresh block fixes it.
   - **Costs:** one extra request per turn, a ~16-token prefill, and one junk
     block per turn in CPU/NVMe. If GPU blocks were evicted, the prefix may also
-    be loaded early, which is effectively a free prefetch.
+    be loaded early. The simulator now models this traffic for every policy
+    when using `--predictors tool`; the baseline launcher likewise defaults
+    to `PREDICTOR=tool` for matched live comparisons.
   - **Checking it on a server:** run with `KVPLACE_LOG_HINTS=1` and confirm
     one "kvplace hint" log line per hint-only request.
   - **The `tool` predictor** gives the median recent duration of the chosen
@@ -123,24 +126,19 @@ Resumption TTFT p90 in seconds (change vs LRU):
 | 24,000 | 0.342 | 0.269 (−21%) | 0.293 (−14%) | 0.403 (+18%) |
 | 48,000 | 0.287 | 0.269 (−6%) | 0.269 (−6%) | 0.298 (+4%) |
 
-What this says:
-- **Go.** There's real headroom when the CPU tier is about 2–8× the GPU prefix
-  cache. When the CPU tier holds everything, nothing is gained (48k row).
-- **The predictor matters most.** Accurate hints give most of the gain, and
-  ~2.7× multiplicative error keeps about half of it. (The EWMA result here is
-  an artifact of the synthetic generator; see the real trace section below.)
-- **Secondary write traffic drops 36–77%** from skipping final turns and
-  deferring short-reuse writes.
-- **Prefetch thrashes under tight CPU:** at 6k blocks, 54% of prefetched
-  blocks are evicted before use. Week 3 needs admission control: don't promote
-  if that evicts blocks with an earlier deadline.
+These submission-time predictors do not require an extra request, so the table
+remains an exploratory upper bound. It does not establish a benefit for the
+post-response `tool` predictor. Selective secondary writes are simulated only;
+prefetch also wasted 54% of promoted blocks at 6k CPU blocks.
 
 ### Real trace: TraceLab (Claude Code subset)
 
 [TraceLab](https://github.com/uw-syfi/TraceLab) (CC BY 4.0) has 8k real
 Claude Code / Codex sessions with per-call token counts, event timestamps and
 per-tool wall latency. Convert it with `kvplace.tracelab`, which documents the
-field mapping, and compare traces with `kvplace.stats`.
+field mapping, and compare traces with `kvplace.stats`. The v0.0.2 JSONL gzip
+used here has SHA-256
+`11ce51ec0a25e3d1d95b025bca2f7d1647e47571eb7cc968acd5fc64d4b4fb65`.
 
 ```bash
 curl -fLo research/traces/syfi_coding_trace.jsonl.gz \
@@ -153,7 +151,14 @@ curl -fLo research/traces/syfi_coding_trace.jsonl.gz \
 .venv/bin/python -m kvplace.tracelab research/traces/syfi_coding_trace.jsonl.gz \
   -o research/traces/tl300.jsonl --provider claude --token-scale 0.25 \
   --max-context 30000 --rebase-rate 0.3 --sessions 300
+# paired simulator comparison: both policies issue the same hint-only requests
+.venv/bin/python -m kvplace.sim research/traces/tl300_full_r05.jsonl \
+  --gpu-blocks 12000 --cpu-blocks 24000 --policies lru reuse \
+  --predictors tool
 ```
+
+With the default sample seed, the full trace has 300 sessions and 8,081
+turns; the 32k-scaled trace has 300 sessions and 5,687 turns.
 
 **Why Claude only:** for Claude rows, the inter-round gaps match the recorded
 tool latencies (p50/p90/p99 0.12/11.8/258 s vs 0.09/11.2/260 s). Codex gaps
@@ -175,30 +180,32 @@ The synthetic generator's independent gaps made EWMA look useless. Real gaps
 are autocorrelated, and human think time (minutes to hours) is a major class.
 Use TraceLab-derived traces for all results from now on.
 
-**Go/no-go on the real trace** (full token scale, 300 sessions at 0.05/s,
-GPU = 12k blocks, default costs). Resumption TTFT in seconds, p50 / p90:
+**Paired go/no-go on the real trace** (full token scale, 300 sessions and 8,081
+turns at 0.05/s, GPU = 12k blocks, CPU = 24k blocks, placeholder costs).
+Every row below uses the `tool` predictor and issues the same hint-only
+requests. Resumption TTFT in seconds:
 
-| CPU blocks | LRU | oracle | noisy σ=1 | tool (hint-only) | ewma |
-|---|---|---|---|---|---|
-| 24,000 | 1.89 / 4.32 | 0.44 / 2.45 | 0.51 / 3.33 | 0.52 / 3.41 | 0.82 / 3.82 |
-| 48,000 | 1.06 / 4.10 | 0.43 / 2.04 | 0.48 / 3.20 | 0.49 / 3.21 | 0.57 / 3.65 |
-| 96,000 | 0.49 / 3.70 | 0.44 / 2.03 | 0.46 / 2.93 | 0.46 / 2.93 | 0.50 / 3.42 |
+| Policy | p50 | p90 | Secondary hit fraction |
+|---|---:|---:|---:|
+| LRU | 0.331 | 3.476 | 0.225 |
+| Reuse eviction only | 0.326 | 3.294 | 0.187 |
+| Reuse prefetch only | 0.318 | 3.467 | 0.205 |
+| Reuse eviction + prefetch | 0.334 | 3.239 | 0.176 |
 
-- **Still a go, and a stronger one than synthetic.** At real context sizes,
-  LRU serves ~50–70% of reused blocks from NVMe at 24k–48k CPU blocks. With
-  the hint-only `tool` predictor, p50 drops 54–73% there. At 96k, LRU
-  already keeps most blocks in CPU, so the p50 gain vanishes (−7%), but p90
-  still drops ~21% at every size. p99 (~12–14 s) barely
-  moves because it's dominated by prefill of large new inputs, not placement.
-- **Tool-aware hints get most of the oracle's p50 gain but only half its p90
-  gain.** The long tail of the gap distribution (human waits) is where
-  prediction is weakest.
-- **Caveat:** at 4× token scale (`tl300.jsonl`, fits 32k models), gains shrink
-  to −8% p90 for `tool`. Transfer volume scales with context, so a short-context
-  replay will understate the effect. Consider a long-context model (e.g.
-  Llama-3.1-8B, 128k) for the GPU runs.
-- At 0.3 sessions/s and full scale, the simulated GPU is overloaded (p90 75 s).
-  Keep load sustainable, or the queueing will hide the placement effects.
+The full policy improves p90 by 7% but raises p50 by 1% relative to paired
+LRU. The earlier 24k LRU result (1.89 / 4.32) omitted hint-only traffic,
+while the `tool` policy included it. That comparison attributed the extra
+requests' GPU cache warming to the placement policy. With matched traffic,
+eviction alone gets most of the p90 improvement; 3.7M of 6.1M prefetched
+blocks are evicted before use under the full policy.
+
+**Decision:** the simulator no longer supports proceeding directly to a
+topology-aware tiering implementation on the claimed latency gain. First run
+the paired live baselines, measure hint-request overhead and useful prefetch,
+and calibrate the simulator with measured costs. A stronger predictor or a
+hint transport that avoids an extra inference request may change this result.
+The 32k-scaled trace is ready for GPU replay; a longer-context model would
+retain more of the original trace's transfer volume.
 
 ### Simulator limitations
 
@@ -208,6 +215,8 @@ GPU = 12k blocks, default costs). Resumption TTFT in seconds, p50 / p90:
 - Prefill is FIFO on one GPU, and decode doesn't contend for it.
 - Transfers are uncontended. Prefetch bandwidth is counted but doesn't delay
   demand loads.
+- Hint-only requests contribute prefill, transfers, queueing, and cache
+  pressure, but the same simplified scheduling applies to them.
 - The model's real outputs are replaced by synthetic tokens in the next turn
   (as in `replay.py`), so decode KV is never reused.
 - No ARC in the simulator. Compare against ARC on the real system.
@@ -224,6 +233,8 @@ GPU = 12k blocks, default costs). Resumption TTFT in seconds, p50 / p90:
 - [ ] **GPU box:** microbench → `costs.json`; baselines ×2 for reproducibility
 - [ ] Rerun the go/no-go table with measured costs; calibrate sim vs `tier_lru`
 - [x] Hint timing: hint-only requests + `tool` predictor (sim + replay + tests)
-- [x] Public real trace (TraceLab) converted, compared, go/no-go rerun
+- [x] Public real trace (TraceLab) converted; paired hint-request simulation
+- [ ] **GPU box:** compare LRU/ARC/reuse with the same hint-only traffic
 - [ ] **GPU box:** confirm hint-only requests reach the policy (`KVPLACE_LOG_HINTS=1`)
 - [ ] Decide model/context: 32k with token scaling vs a 128k model
+- [ ] Revisit the tiering implementation plan after measured, paired results

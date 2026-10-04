@@ -96,16 +96,30 @@ def test_unhinted_requests_fall_back_to_lru(setup):
 
 
 def test_hint_only_request_updates_deadline(setup):
-    """A hint-only request that stores one padding chunk re-targets eviction:
-    session a's turn carried no hint, its post-response hint says 'final'."""
+    """A post-response hint evicts original blocks, not only its padding block."""
     manager, clock = setup
-    run_request(manager, ctx("a0", None), keys(1, 2))
+    run_request(manager, ctx("a0", ReuseHint("a", 0)), keys(1, 2))
     run_request(manager, ctx("b0", ReuseHint("b", 0, 300.0)), keys(3))
     run_request(manager, ctx("a0-hint", ReuseHint("a", 0, final=True)), keys(4))
 
+    # Keep the padding block in the request so it cannot satisfy eviction.
+    out = run_request(manager, ctx("c0", None), keys(4, 5))
+
+    assert out.evicted_keys[0] in keys(1, 2)
+    assert manager.lookup(keys(3)[0], ReqContext(req_id="x")) is LookupResult.HIT
+
+
+def test_late_hint_does_not_replace_a_newer_turn(setup):
+    """A delayed hint for turn 0 must not extend turn 1's reuse deadline."""
+    manager, _ = setup
+    run_request(manager, ctx("a0", ReuseHint("a", 0)), keys(1))
+    run_request(manager, ctx("a1", ReuseHint("a", 1, 5.0)), keys(2))
+    run_request(manager, ctx("b0", ReuseHint("b", 0, 100.0)), keys(3))
+    run_request(manager, ctx("a0-hint", ReuseHint("a", 0, 300.0)), keys(4))
+
     out = run_request(manager, ctx("c0", None), keys(5))
 
-    assert out.evicted_keys[0] in keys(1, 2, 4)
+    assert out.evicted_keys == keys(3)
 
 
 def test_storeless_request_hint_needs_on_new_request(setup):

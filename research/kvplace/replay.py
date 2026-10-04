@@ -6,9 +6,10 @@ turns share an exact prefix (no chat-template or tokenizer drift). Turn k+1's
 prompt contains synthetic stand-ins for turn k's output, so those tokens are
 recomputed — the simulator models them the same way.
 
-With a post-response predictor (e.g. `tool`), each turn's request carries no
-hint; instead a hint-only request (same prefix + one padding block,
-max_tokens=1) is sent right after the response, once the agent knows its tool.
+With a post-response predictor (e.g. `tool`), each turn's request carries
+its session identity without a reuse estimate. A hint-only request (same
+prefix + one padding block, max_tokens=1) updates the estimate right after
+the response, once the agent knows its tool.
 
 Writes one CSV row per request plus a JSON delta of the server's Prometheus
 counters (offload bytes/time, prefix-cache hits) over the run.
@@ -107,7 +108,7 @@ async def run_session(http, args, model, session, shared, predictor, t0, rows):
     hint_tasks = []
     gaps: list[float] = []  # trace time; predictors never see time_scale
     for k, turn in enumerate(session.turns):
-        hint = None if post else predictor(session, k, gaps)
+        hint = ReuseHint(session.session_id, k) if post else predictor(session, k, gaps)
         hint = scale_hint(hint, args.time_scale)
         body = {
             "model": model,

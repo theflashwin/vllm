@@ -10,6 +10,8 @@ simulated time. It mirrors the vLLM data path that matters for placement:
     secondary->CPU->GPU and promoted into CPU.
   * Newly computed prompt blocks are stored to CPU immediately and cascaded to
     the secondary tier (write-through), unless the policy skips the write.
+  * Post-response hint requests consume cache, transfer, and prefill capacity
+    for every policy in a matched comparison.
   * Prefill is serialized on one GPU (FIFO); decode does not contend.
 
 Deliberate simplifications (see README): no GPU working-set pinning, cache
@@ -127,6 +129,7 @@ class ReuseAwareTier(LRUTier):
         self.deadline: dict[str, float] = {}
         self.final: set[str] = set()
         self.last_use: dict[str, float] = {}
+        self.latest_turn: dict[str, int] = {}
         self.by_session: dict[str, set[int]] = defaultdict(set)
 
     def _score(self, sid: str, now: float) -> float:
@@ -140,14 +143,20 @@ class ReuseAwareTier(LRUTier):
         return self.last_use.get(sid, now) + self.default_horizon_s
 
     def set_hint(self, session_id: str, hint: ReuseHint | None, now: float) -> None:
+        if hint is not None:
+            if hint.turn < self.latest_turn.get(session_id, -1):
+                return
+            self.latest_turn[session_id] = hint.turn
         self.last_use[session_id] = now
         self.deadline.pop(session_id, None)
         if hint is None:
             return
         if hint.final:
             self.final.add(session_id)
-        elif hint.expected_reuse_s is not None:
-            self.deadline[session_id] = now + hint.expected_reuse_s
+        else:
+            self.final.discard(session_id)
+            if hint.expected_reuse_s is not None:
+                self.deadline[session_id] = now + hint.expected_reuse_s
 
     def touch(self, keys: Iterable[BlockKey], now: float) -> None:
         super().touch(keys, now)
@@ -197,7 +206,6 @@ class ReuseAwareTier(LRUTier):
 class PolicyConfig:
     name: str
     cpu_policy: str = "lru"  # lru | reuse
-    use_hints: bool = False
     prefetch: bool = False
     # Selective write: never cascade final-turn blocks, and defer cascading
     # blocks whose predicted reuse is sooner than write_defer_horizon_s; a
@@ -209,13 +217,9 @@ class PolicyConfig:
 
 POLICIES: dict[str, PolicyConfig] = {
     "lru": PolicyConfig("lru"),
-    "reuse_evict": PolicyConfig("reuse_evict", "reuse", use_hints=True),
-    "reuse_prefetch": PolicyConfig(
-        "reuse_prefetch", "lru", use_hints=True, prefetch=True
-    ),
-    "reuse": PolicyConfig(
-        "reuse", "reuse", use_hints=True, prefetch=True, selective_write=True
-    ),
+    "reuse_evict": PolicyConfig("reuse_evict", "reuse"),
+    "reuse_prefetch": PolicyConfig("reuse_prefetch", "lru", prefetch=True),
+    "reuse": PolicyConfig("reuse", "reuse", prefetch=True, selective_write=True),
 }
 
 
@@ -318,9 +322,7 @@ class Simulator:
     ):
         self.sessions = {s.session_id: s for s in sessions}
         self.policy = policy
-        self.predictor: Predictor = get_predictor(
-            predictor_name if policy.use_hints else "none"
-        )
+        self.predictor: Predictor = get_predictor(predictor_name)
         self.cost = cost
         self.time_scale = time_scale
         self.gpu = LRUTier(gpu_blocks)
@@ -331,9 +333,9 @@ class Simulator:
         self.gaps: dict[str, list[float]] = defaultdict(list)
         self.prefetched: set[BlockKey] = set()
         self.deferred: set[BlockKey] = set()
-        self.result = SimResult(
-            policy.name, predictor_name if policy.use_hints else "none"
-        )
+        self._pending_hints: dict[tuple[str, int], ReuseHint] = {}
+        self._latest_turn: dict[str, int] = {}
+        self.result = SimResult(policy.name, predictor_name)
         self._events: list[tuple[float, int, str, str, int]] = []
         self._seq = 0
 
@@ -348,6 +350,10 @@ class Simulator:
             t, _, kind, sid, k = heapq.heappop(self._events)
             if kind == "arrive":
                 self._arrive(t, self.sessions[sid], k)
+            elif kind == "hint_request":
+                self._hint_request(t, self.sessions[sid], k)
+            elif kind == "hint_update":
+                self._hint_update(t, self.sessions[sid], k)
             elif kind == "prefetch":
                 self._prefetch(t, self.sessions[sid], k)
         # Prefetched but never read before the trace ended.
@@ -381,8 +387,8 @@ class Simulator:
         # response, so store-time decisions (selective write) can't use them.
         post = is_post_response(self.predictor)
         submit_hint = None if post else hint
-        if post and hint is not None:
-            c.hint_requests += 1
+        if post:
+            self._latest_turn[s.session_id] = k
 
         # Lookup: longest contiguous prefix across tiers.
         tiers = []
@@ -427,7 +433,8 @@ class Simulator:
         new_keys = keys[n_hit:]
         # Deadlines count from the response finishing (when vLLM's policy
         # sees on_request_finished), not from arrival.
-        self.cpu.set_hint(s.session_id, hint, finish)
+        identity = ReuseHint(s.session_id, k) if post else hint
+        self.cpu.set_hint(s.session_id, identity, finish)
         self._note_cpu_evictions(self.cpu.insert(new_keys, now), now)
         c.gpu_to_cpu_store_blocks += len(new_keys) if self.cpu.capacity > 0 else 0
         if self.sec.capacity > 0 and new_keys:
@@ -439,7 +446,7 @@ class Simulator:
             else:
                 self.sec.insert(new_keys, now)
                 c.cpu_to_sec_write_blocks += len(new_keys)
-        if hint is not None and hint.final:
+        if not post and hint is not None and hint.final:
             # Earlier deferred blocks of a finished session need no write-back.
             self.deferred.difference_update(keys)
 
@@ -460,15 +467,89 @@ class Simulator:
             )
         )
 
+        if post and hint is not None:
+            self._pending_hints[s.session_id, k] = hint
+            self._push(finish, "hint_request", s.session_id, k)
+
         if k + 1 < len(s.turns):
             gap = s.turns[k].tool_duration_s * self.time_scale
             self.gaps[s.session_id].append(s.turns[k].tool_duration_s)
             self._push(finish + gap, "arrive", s.session_id, k + 1)
-            if self.policy.prefetch and hint and hint.expected_reuse_s is not None:
+            if (
+                not post
+                and self.policy.prefetch
+                and hint
+                and hint.expected_reuse_s is not None
+            ):
                 # Promote early enough to hide secondary->CPU latency.
                 lead = cost.sec_to_cpu_s(len(keys)) + self.policy.prefetch_margin_s
                 t = finish + max(0.0, hint.expected_reuse_s - lead)
                 self._push(t, "prefetch", s.session_id, k)
+
+    def _hint_request(self, now: float, s: Session, k: int) -> None:
+        """Model the extra request used to deliver a post-response hint."""
+        c = self.result.counters
+        cost = self.cost
+        keys = _block_keys(s, s.prompt_lengths()[k], cost.block_tokens)
+        keys.append((f"{s.session_id}:hint", k))
+        padded_len = len(keys) * cost.block_tokens
+
+        tiers = []
+        for key in keys:
+            if key in self.gpu:
+                tiers.append("gpu")
+            elif key in self.cpu:
+                tiers.append("cpu")
+            elif key in self.sec:
+                tiers.append("sec")
+            else:
+                break
+        n_hit = len(tiers)
+        sec_keys = [key for key, tier in zip(keys, tiers) if tier == "sec"]
+        cpu_keys = [key for key, tier in zip(keys, tiers) if tier == "cpu"]
+        load_s = cost.sec_to_cpu_s(len(sec_keys)) + cost.cpu_to_gpu_s(
+            len(sec_keys) + len(cpu_keys)
+        )
+        prefill_s = (padded_len - n_hit * cost.block_tokens) / cost.prefill_tok_per_s
+        start = max(now, self.gpu_free_at)
+        self.gpu_free_at = start + prefill_s
+        finish = (
+            now
+            + cost.sched_overhead_s
+            + (start - now)
+            + load_s
+            + prefill_s
+            + cost.decode_s_per_tok
+        )
+
+        self.gpu.insert(keys, now)
+        self.sec.touch(sec_keys, now)
+        self._note_cpu_evictions(self.cpu.insert(sec_keys, now), now)
+        self.cpu.touch(cpu_keys, now)
+        new_keys = keys[n_hit:]
+        self._note_cpu_evictions(self.cpu.insert(new_keys, now), now)
+        if self.sec.capacity > 0:
+            self.sec.insert(new_keys, now)
+            c.cpu_to_sec_write_blocks += len(new_keys)
+        c.sec_to_cpu_demand_blocks += len(sec_keys)
+        c.cpu_to_gpu_blocks += len(sec_keys) + len(cpu_keys)
+        c.gpu_to_cpu_store_blocks += len(new_keys) if self.cpu.capacity > 0 else 0
+        c.hint_requests += 1
+        self._push(finish, "hint_update", s.session_id, k)
+
+    def _hint_update(self, now: float, s: Session, k: int) -> None:
+        hint = self._pending_hints.pop((s.session_id, k))
+        if k < self._latest_turn[s.session_id]:
+            return
+        self.cpu.set_hint(s.session_id, hint, now)
+        if hint.final:
+            keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
+            self.deferred.difference_update(keys)
+        if self.policy.prefetch and hint.expected_reuse_s is not None:
+            keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
+            lead = self.cost.sec_to_cpu_s(len(keys)) + self.policy.prefetch_margin_s
+            t = now + max(0.0, hint.expected_reuse_s - lead)
+            self._push(t, "prefetch", s.session_id, k)
 
     def _scaled(self, hint: ReuseHint | None) -> ReuseHint | None:
         if hint is None or hint.expected_reuse_s is None or self.time_scale == 1:
@@ -532,8 +613,7 @@ def main() -> None:
     cost = CostModel.from_json(args.cost_json) if args.cost_json else CostModel()
     runs = []
     for pol in args.policies:
-        preds = args.predictors if POLICIES[pol].use_hints else ["none"]
-        for pred in preds:
+        for pred in args.predictors:
             sim = Simulator(
                 sessions,
                 POLICIES[pol],
