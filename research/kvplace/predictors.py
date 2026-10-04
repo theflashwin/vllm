@@ -6,9 +6,10 @@ Two timings:
   * submission-time (default): the hint rides on the turn's own request, so
     the predictor may only use what is known before the model responds.
     `oracle`/`noisy` break this rule on purpose — they are upper bounds.
-  * post-response (`post_response = True`): the hint is sent in a separate
-    hint-only request right after the response, when the agent knows which
-    tool it is calling and whether the session is ending.
+  * post-response (`post_response = True`): the turn request carries session
+    identity without a reuse estimate. A separate hint-only request updates
+    it after the response, when the agent knows which tool it is calling and
+    whether the session is ending.
 
 Predictors with an `observe(tool_name, duration_s)` method are fed every
 completed tool call (in time order) so they can learn online.

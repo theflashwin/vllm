@@ -47,3 +47,17 @@ def test_oracle_reuse_policy_beats_lru_under_pressure():
     reuse = run(sessions, "reuse").summary()
     assert reuse["resume_ttft_mean"] < lru["resume_ttft_mean"]
     assert reuse["resume_frac_sec"] < lru["resume_frac_sec"]
+
+
+def test_tool_predictor_adds_the_same_hint_request_load_to_baseline():
+    sessions = small_trace(5)
+    expected = sum(len(s.turns) for s in sessions)
+    lru = run(sessions, "lru", predictor="tool")
+    reuse = run(sessions, "reuse", predictor="tool")
+
+    assert lru.counters.hint_requests == expected
+    assert reuse.counters.hint_requests == expected
+    assert (
+        lru.counters.gpu_to_cpu_store_blocks
+        > run(sessions, "lru", predictor="none").counters.gpu_to_cpu_store_blocks
+    )
