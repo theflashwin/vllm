@@ -25,9 +25,17 @@ research/
 
 ## Setup
 
-The next research direction and reproduction commands are in
+The initial prefetch direction and reproduction commands are in
 [PREFETCH_PLAN.md](PREFETCH_PLAN.md): compare demand-only, fixed lead-time,
 budget-only, and uncertainty-aware prefetch with transfer completion events.
+
+The proposal's novelty assessment is in
+[LITERATURE_REVIEW.md](LITERATURE_REVIEW.md). The subsequent GPU restoration
+headroom experiment is in [RESTORATION_PLAN.md](RESTORATION_PLAN.md), with measured
+L4 findings in [RESTORATION_RESULTS.md](RESTORATION_RESULTS.md), using
+`modal_restoration.py` and `kvplace/restoration_gpu.py`. Its published wheel
+receives an upstream load-cap backport inside the experiment image; the local
+vLLM source is not changed.
 
 ```bash
 # from the vllm repo root
