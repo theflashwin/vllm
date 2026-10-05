@@ -1,8 +1,9 @@
 """Sanity checks for the trace generator and offline simulator."""
 
 from kvplace.gen_synthetic import DEFAULT_TOOLS, generate
+from kvplace.hints import ReuseHint
 from kvplace.prefetch_experiment import PrefetchConfig, PrefetchExperiment
-from kvplace.sim import POLICIES, CostModel, Simulator
+from kvplace.sim import POLICIES, CostModel, PolicyConfig, Simulator, get_policy
 from kvplace.trace import Session, Turn, read_trace, write_trace
 
 
@@ -119,3 +120,80 @@ def test_prefetch_completion_after_resume_is_wasted_and_demand_waits():
         c.prefetch_used_blocks + c.prefetch_wasted_blocks
         == c.sec_to_cpu_prefetch_blocks
     )
+
+
+def _evicted_during_gap(tokens: int) -> list[Session]:
+    """Session a pauses 60 s; session b fills the GPU meanwhile."""
+    return [
+        Session("a", 0.0, [Turn(tokens, 16, "build", 60.0), Turn(16, 16)]),
+        Session("b", 20.0, [Turn(tokens, 16)]),
+    ]
+
+
+def _warm(sessions, policy, predictor, gpu=0):
+    return Simulator(
+        sessions, get_policy(policy), predictor, CostModel(), gpu, 10**6, 10**7
+    ).run()
+
+
+def test_oracle_warmup_restores_before_return():
+    """A warm-up timed by the oracle lands the prefix on GPU before the
+    session returns, so the resumption is a GPU hit, not a CPU load."""
+    s = _evicted_during_gap(4096)
+    lru = _warm(s, "lru", "none", gpu=300).records
+    timed = _warm(s, "warm:5", "oracle", gpu=300).records
+    resume = [r for r in timed if r.session_id == "a" and r.turn == 1][0]
+    assert [r for r in lru if r.session_id == "a"][1].gpu_hit_blocks < 4096 // 16
+    assert resume.gpu_hit_blocks == 4096 // 16
+
+
+def test_warmup_sent_too_late_is_waited_for():
+    """A lead shorter than the restore time makes the request wait for the
+    in-flight warm-up instead of seeing an instant GPU hit."""
+    s = _evicted_during_gap(160_000)
+    result = _warm(s, "warm:0", "oracle", gpu=10_100)
+    resume = [r for r in result.records if r.session_id == "a" and r.turn == 1][0]
+    assert result.counters.warmup_late == 1
+    assert resume.ttft_s > CostModel().cpu_to_gpu_s(10_000)
+
+
+def test_overestimated_gap_cancels_the_warmup():
+    """If the session returns before the scheduled warm-up, it is cancelled
+    rather than restoring stale state."""
+    s = [Session("s", 0.0, [Turn(1600, 16, "x", 1.0), Turn(16, 16)])]
+    result = Simulator(
+        s, PolicyConfig("w", warmup_lead_s=0.0), "oracle", CostModel(), 0, 10**6, 0
+    )
+    # Force a 100 s prediction for a 1 s gap.
+    result.predictor = lambda sess, k, gaps: ReuseHint("s", k, 100.0, k == 1)
+    counters = result.run().counters
+    assert counters.warmup_cancelled == 1
+    assert counters.hint_requests == 1  # only the final turn's warm-up
+
+
+def test_contended_secondary_link_serializes_reads():
+    """With a shared secondary link, a read issued while another is in flight
+    finishes only after it, so prefetch traffic can delay demand loads."""
+    sim = Simulator([], POLICIES["lru"], "none", CostModel(), 0, 0, 0, contend_sec=True)
+    one = CostModel().sec_to_cpu_s(1000)
+    assert sim._secondary_load_s(0.0, 1000) == one
+    assert sim._secondary_load_s(0.0, 1000) == 2 * one
+
+
+def test_gpu_aware_policy_keeps_soon_returning_session_on_gpu():
+    """Agent-aware GPU eviction keeps the session that returns soonest, where
+    LRU would evict it for being least recently used."""
+    sessions = [
+        Session("soon", 0.0, [Turn(1600, 16, "x", 30.0), Turn(16, 16)]),
+        Session("late", 5.0, [Turn(1600, 16, "x", 600.0), Turn(16, 16)]),
+        Session("new", 20.0, [Turn(1600, 16)]),
+    ]
+
+    def soon_gpu_hits(policy):
+        result = Simulator(
+            sessions, POLICIES[policy], "oracle", CostModel(), 210, 10**4, 0
+        ).run()
+        (r,) = [r for r in result.records if r.session_id == "soon" and r.turn == 1]
+        return r.gpu_hit_blocks
+
+    assert soon_gpu_hits("gpu_aware") > soon_gpu_hits("lru")

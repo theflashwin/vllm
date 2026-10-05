@@ -17,6 +17,10 @@ Mapping (row k of a session, sorted by round_index):
     result feeds row k+1. For Claude rows this gap matches the recorded
     `tool_wall_latency_ms`; Codex timestamps are less consistent (see README).
 
+Each segment's first-call provider cache hit (`prefix_tokens`) becomes its
+`shared_prefix_tokens`, assuming that content (system prompt, tool
+definitions) is common to all sessions; --no-shared-prefix disables this.
+
 Real contexts (30k-200k tokens) exceed small models' windows, so
 --token-scale shrinks every token count and --max-context truncates sessions.
 The trace spans weeks; --rebase-rate replaces session start times with a
@@ -67,6 +71,7 @@ def load_rows(path: str, provider: str) -> dict[str, list[dict]]:
                 {
                     "k": d["round_index"],
                     "in": d["input_tokens_total"],
+                    "hit": d.get("prefix_tokens") or 0,
                     "out": d["output_tokens"] or 0,
                     "start": max(inputs) if inputs else min(times),
                     "end": max(times),
@@ -83,6 +88,7 @@ def to_sessions(
     max_context: int,
     max_turns: int,
     min_turns: int,
+    shared_prefix: bool = True,
 ) -> list[Session]:
     out = []
     for sid, rows in rows_by_session.items():
@@ -116,11 +122,18 @@ def to_sessions(
                 continue
             # A truncated session ends on its last kept turn.
             turns[-1] = Turn(turns[-1].new_input_tokens, turns[-1].output_tokens)
+            # The provider's cache hit on a segment's first call is content
+            # shared with earlier sessions (system prompt, tool definitions).
+            shared = 0
+            if shared_prefix:
+                hit = round(seg[0].get("hit", 0) * token_scale)
+                shared = min(hit, turns[0].new_input_tokens)
             out.append(
                 Session(
                     session_id=f"{sid}#{seg_idx}",
                     start_s=seg[0]["start"],
                     turns=turns,
+                    shared_prefix_tokens=shared,
                     meta={"source": "tracelab"},
                 )
             )
@@ -138,6 +151,13 @@ def main() -> None:
     p.add_argument("--max-turns", type=int, default=10**9)
     p.add_argument("--min-turns", type=int, default=2)
     p.add_argument(
+        "--shared-prefix",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="model each segment's first-call provider cache hit as a prefix "
+        "shared across sessions",
+    )
+    p.add_argument(
         "--rebase-rate",
         type=float,
         help="replace session starts with Poisson arrivals (sessions/s)",
@@ -152,6 +172,7 @@ def main() -> None:
         args.max_context,
         args.max_turns,
         args.min_turns,
+        args.shared_prefix,
     )
     rng = random.Random(args.seed)
     if args.sessions and args.sessions < len(sessions):

@@ -75,14 +75,16 @@ def make_session_ewma(alpha: float = 0.5) -> Predictor:
 
 
 class ToolMedian:
-    """Post-response: median of recently observed durations of the tool the
-    agent just chose (learned online across all sessions). The final flag is
-    exact, since a response without a tool call ends the session."""
+    """Post-response: median (or `quantile`) of recently observed durations of
+    the tool the agent just chose (learned online across all sessions). The
+    final flag is exact, since a response without a tool call ends the
+    session."""
 
     post_response = True
 
-    def __init__(self, window: int = 200, min_samples: int = 3):
+    def __init__(self, window: int = 200, min_samples: int = 3, quantile: float = 0.5):
         self.min_samples = min_samples
+        self.quantile = quantile
         self.history: dict[str, deque[float]] = defaultdict(
             lambda: deque(maxlen=window)
         )
@@ -96,7 +98,13 @@ class ToolMedian:
         if k == len(session.turns) - 1:
             return ReuseHint(session.session_id, k, None, final=True)
         h = self.history.get(turn.tool_name)
-        est = statistics.median(h) if h and len(h) >= self.min_samples else None
+        est = None
+        if h and len(h) >= self.min_samples:
+            if self.quantile == 0.5:
+                est = statistics.median(h)
+            else:
+                xs = sorted(h)
+                est = xs[min(len(xs) - 1, int(self.quantile * len(xs)))]
         return ReuseHint(session.session_id, k, est)
 
 
@@ -105,7 +113,8 @@ def is_post_response(predictor: Predictor) -> bool:
 
 
 def get_predictor(name: str) -> Predictor:
-    """Names: none, oracle, noisy:<sigma>, ewma[:<alpha>], tool[:<window>]."""
+    """Names: none, oracle, noisy:<sigma>, ewma[:<alpha>], tool[:<window>],
+    toolq:<quantile> (a tool-duration quantile instead of the median)."""
     kind, _, arg = name.partition(":")
     if kind == "none":
         return no_hints
@@ -117,4 +126,6 @@ def get_predictor(name: str) -> Predictor:
         return make_session_ewma(float(arg or 0.5))
     if kind == "tool":
         return ToolMedian(int(arg or 200))
+    if kind == "toolq":
+        return ToolMedian(quantile=float(arg))
     raise ValueError(f"unknown predictor {name!r}")
