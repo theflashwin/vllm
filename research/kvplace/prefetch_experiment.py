@@ -224,6 +224,7 @@ class PrefetchExperiment(Simulator):
                     "arrive": self._arrive,
                     "hint_request": self._hint_request,
                     "hint_update": self._hint_update,
+                    "restored": self._restored,
                     "prefetch": self._prefetch,
                 }[kind](now, s, k)
         self.result.counters.prefetch_wasted_blocks += len(self.prefetched)

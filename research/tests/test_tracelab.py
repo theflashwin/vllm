@@ -3,10 +3,11 @@
 from kvplace.tracelab import to_sessions
 
 
-def row(k, inp, out, start, end, human=False, tool=None):
+def row(k, inp, out, start, end, human=False, tool=None, hit=0):
     return {
         "k": k,
         "in": inp,
+        "hit": hit,
         "out": out,
         "start": start,
         "end": end,
@@ -55,3 +56,13 @@ def test_max_context_truncates_and_marks_final():
     )
     assert len(s.turns) == 2
     assert s.turns[-1].tool_name is None
+
+
+def test_first_call_cache_hit_becomes_shared_prefix():
+    """The provider's cache hit on a segment's first call (system prompt,
+    tools) is modeled as a cross-session prefix, not cold prefill."""
+    rows = [row(0, 1000, 50, 0.0, 2.0, hit=600), row(1, 1100, 20, 3.0, 4.0)]
+    (s,) = convert(rows)
+    assert s.shared_prefix_tokens == 600
+    (s,) = convert(rows, shared_prefix=False)
+    assert s.shared_prefix_tokens == 0

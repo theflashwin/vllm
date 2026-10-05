@@ -5,6 +5,11 @@ Everything here is out-of-tree: it plugs into vLLM's `OffloadingConnector`
 through `cache_policy_module_path` and request `kv_transfer_params`, and does
 not modify `vllm/`. Not intended for upstreaming as-is.
 
+**Current direction and findings: [DIRECTION.md](DIRECTION.md)** (agent-aware
+demotion to the disk tier). The week 1-2 sections below record how we got
+there; their numbers predate the matched-traffic, shared-prefix and
+link-contention fixes.
+
 ```
 research/
   kvplace/
@@ -14,7 +19,10 @@ research/
     stats.py          compares traces (gap tails, autocorrelation, context sizes)
     hints.py          ReuseHint + transports (kv_transfer_params / KvHintsEnvelope)
     predictors.py     none | oracle | noisy:<sigma> | ewma[:<alpha>] | tool
-    sim.py            offline 3-tier simulator (week-2 go/no-go)
+    sim.py            offline 3-tier simulator
+    tier_sweep.py     which boundary agent awareness belongs at (contended link)
+    headroom.py       TTFT breakdown, perfect-cache bound, headroom map
+    restore_sweep.py  timed GPU warm-up go/no-go (negative result)
     prefetch_experiment.py  shared-link, budgeted uncertainty-aware prefetch
     vllm_policy.py    ReuseAwareCachePolicy for vLLM's CPU tier
     replay.py         replays a trace against a live vLLM server
@@ -177,7 +185,10 @@ turns; the 32k-scaled trace has 300 sessions and 5,687 turns.
 tool latencies (p50/p90/p99 0.12/11.8/258 s vs 0.09/11.2/260 s). Codex gaps
 (p50 2.0 s) don't match its tool latencies (p50 0.6 s), so its timestamp
 semantics are unclear. `prefix_tokens` is the provider's *cache hit*, not the
-logical prefix, so it isn't used.
+logical prefix. On a segment's first call it is the shared system prompt and
+tool definitions, so the converter models it as a cross-session shared prefix
+(`--no-shared-prefix` disables this). Without it, cold prefill and tail
+queueing are badly overstated.
 
 **How the synthetic generator compares:**
 
@@ -226,8 +237,8 @@ retain more of the original trace's transfer volume.
   capacity.
 - Cache updates are applied at request arrival, not at prefill completion.
 - Prefill is FIFO on one GPU, and decode doesn't contend for it.
-- Transfers are uncontended. Prefetch bandwidth is counted but doesn't delay
-  demand loads.
+- GPU<->CPU transfers are uncontended. Secondary reads are uncontended unless
+  `--contend-sec` is set (then prefetch and demand share one link).
 - Hint-only requests contribute prefill, transfers, queueing, and cache
   pressure, but the same simplified scheduling applies to them.
 - The model's real outputs are replaced by synthetic tokens in the next turn
@@ -251,3 +262,4 @@ retain more of the original trace's transfer volume.
 - [ ] **GPU box:** confirm hint-only requests reach the policy (`KVPLACE_LOG_HINTS=1`)
 - [ ] Decide model/context: 32k with token scaling vs a 128k model
 - [ ] Revisit the tiering implementation plan after measured, paired results
+- [x] Pivot: agent-aware demotion to disk (see [DIRECTION.md](DIRECTION.md))
