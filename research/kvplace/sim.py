@@ -414,7 +414,7 @@ class Simulator:
                 self.prefetched.discard(key)
                 c.prefetch_used_blocks += 1
 
-        load_s = cost.sec_to_cpu_s(n_sec) + cost.cpu_to_gpu_s(n_cpu + n_sec)
+        load_s = self._secondary_load_s(now, n_sec) + cost.cpu_to_gpu_s(n_cpu + n_sec)
         c.sec_to_cpu_demand_blocks += n_sec
         c.cpu_to_gpu_blocks += n_cpu + n_sec
 
@@ -481,10 +481,7 @@ class Simulator:
                 and hint
                 and hint.expected_reuse_s is not None
             ):
-                # Promote early enough to hide secondary->CPU latency.
-                lead = cost.sec_to_cpu_s(len(keys)) + self.policy.prefetch_margin_s
-                t = finish + max(0.0, hint.expected_reuse_s - lead)
-                self._push(t, "prefetch", s.session_id, k)
+                self._schedule_prefetch(finish, s, k, hint)
 
     def _hint_request(self, now: float, s: Session, k: int) -> None:
         """Model the extra request used to deliver a post-response hint."""
@@ -507,7 +504,11 @@ class Simulator:
         n_hit = len(tiers)
         sec_keys = [key for key, tier in zip(keys, tiers) if tier == "sec"]
         cpu_keys = [key for key, tier in zip(keys, tiers) if tier == "cpu"]
-        load_s = cost.sec_to_cpu_s(len(sec_keys)) + cost.cpu_to_gpu_s(
+        for key in cpu_keys:
+            if key in self.prefetched:
+                self.prefetched.discard(key)
+                c.prefetch_used_blocks += 1
+        load_s = self._secondary_load_s(now, len(sec_keys)) + cost.cpu_to_gpu_s(
             len(sec_keys) + len(cpu_keys)
         )
         prefill_s = (padded_len - n_hit * cost.block_tokens) / cost.prefill_tok_per_s
@@ -546,10 +547,18 @@ class Simulator:
             keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
             self.deferred.difference_update(keys)
         if self.policy.prefetch and hint.expected_reuse_s is not None:
-            keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
-            lead = self.cost.sec_to_cpu_s(len(keys)) + self.policy.prefetch_margin_s
-            t = now + max(0.0, hint.expected_reuse_s - lead)
-            self._push(t, "prefetch", s.session_id, k)
+            self._schedule_prefetch(now, s, k, hint)
+
+    def _secondary_load_s(self, now: float, blocks: int) -> float:
+        return self.cost.sec_to_cpu_s(blocks)
+
+    def _schedule_prefetch(
+        self, now: float, s: Session, k: int, hint: ReuseHint
+    ) -> None:
+        keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
+        lead = self.cost.sec_to_cpu_s(len(keys)) + self.policy.prefetch_margin_s
+        t = now + max(0.0, hint.expected_reuse_s - lead)
+        self._push(t, "prefetch", s.session_id, k)
 
     def _scaled(self, hint: ReuseHint | None) -> ReuseHint | None:
         if hint is None or hint.expected_reuse_s is None or self.time_scale == 1:
