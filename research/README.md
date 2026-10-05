@@ -15,6 +15,7 @@ research/
     hints.py          ReuseHint + transports (kv_transfer_params / KvHintsEnvelope)
     predictors.py     none | oracle | noisy:<sigma> | ewma[:<alpha>] | tool
     sim.py            offline 3-tier simulator (week-2 go/no-go)
+    prefetch_experiment.py  shared-link, budgeted uncertainty-aware prefetch
     vllm_policy.py    ReuseAwareCachePolicy for vLLM's CPU tier
     replay.py         replays a trace against a live vLLM server
     microbench.py     GPU<->CPU, FS, and prefill/decode cost measurement
@@ -23,6 +24,10 @@ research/
 ```
 
 ## Setup
+
+The next research direction and reproduction commands are in
+[PREFETCH_PLAN.md](PREFETCH_PLAN.md): compare demand-only, fixed lead-time,
+budget-only, and uncertainty-aware prefetch with transfer completion events.
 
 ```bash
 # from the vllm repo root
