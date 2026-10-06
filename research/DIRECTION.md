@@ -84,6 +84,19 @@ The ~24 concurrent sessions in the arrival window (~120k blocks of KV) fit in
 GPU + 260k CPU blocks (~240 GB DRAM), so little reaches disk and policies
 converge. The gain needs a working set larger than DRAM.
 
+**Higher load does not get there** (65k GPU blocks, `tool` predictor, p90):
+
+| Concurrent sessions | CPU blocks / disk | LRU | GPU/CPU-aware | Both | vs GPU/CPU-aware |
+|---|---|---:|---:|---:|---:|
+| ~37 (0.15/s) | 260k / 3 GB/s | 2.58 | 2.64 | 2.47 | -6% |
+| ~37 (0.15/s) | 130k / 7 GB/s | 2.68 | 2.64 | 2.54 | -4% |
+| ~45 (0.3/s) | 260k / 3 GB/s | 14.8 | 14.6 | 14.6 | 0% |
+| ~45 (0.3/s) | 130k / 7 GB/s | 22.7 | 16.2 | 14.9 | -8% |
+
+Prefill compute saturates before the KV working set overflows DRAM: at ~45
+sessions every policy sits at ~14.5 s p90 from queueing. For a 7B GQA model on
+a well-provisioned server, the regime where demotion matters is not reached.
+
 **Measured costs (Modal L4, Qwen2.5-7B).** GPU<->CPU 13.5 GB/s, container
 disk reads 0.93 GB/s, prefill 3.3k tok/s, decode 57 ms/token. GPU = 8k blocks,
 0.01 sessions/s (what one L4 can sustain), p90 with the `tool` predictor:
@@ -134,9 +147,14 @@ reads delay demand loads on the shared link.
 
 ## Caveats and next checks
 
-- The regime matters more than the policy: gains are 14-45% where disk reads
-  bottleneck and the working set exceeds DRAM, and ~0 elsewhere. The
-  presentation should lead with this map, not a single number.
+- The regime matters more than the policy. Gains over GPU/CPU-aware:
+  -45% on the measured slow disk (0.93 GB/s), -20 to -26% on memory-tight
+  hosts (12k GPU / 96k CPU blocks), 0 to -6% on an H100-class GPU with
+  >=240 GB DRAM at any tested disk speed and load. The presentation should
+  lead with this map, not a single number.
+- Untested regimes where it may matter more: models with larger KV per token
+  (no GQA, longer contexts), network-attached cloud disks, more sessions per
+  GPU via tensor parallelism.
 - Only one GPU type measured (L4). Its container disk is not a local NVMe. An
   H100 with local NVMe is the most relevant missing point.
 - Tool-name predictors have large errors (median 3.2x, p90 80x; session-local
