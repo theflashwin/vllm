@@ -197,3 +197,17 @@ def test_gpu_aware_policy_keeps_soon_returning_session_on_gpu():
         return r.gpu_hit_blocks
 
     assert soon_gpu_hits("gpu_aware") > soon_gpu_hits("lru")
+
+
+def test_session_tool_predictor_uses_this_sessions_history():
+    """A session that ran a slow test suite before is predicted slow again,
+    even when the global median for that tool is short."""
+    from kvplace.predictors import get_predictor
+
+    p = get_predictor("toolsess")
+    for _ in range(5):
+        p.observe("Bash", 1.0)
+    s = Session(
+        "s", 0.0, [Turn(10, 1, "Bash", 300.0), Turn(10, 1, "Bash", 280.0), Turn(1, 1)]
+    )
+    assert p(s, 1, []).expected_reuse_s == 300.0

@@ -1,7 +1,7 @@
 # Project direction: agent-aware demotion to the disk tier
 
-Status as of 2026-10-05. Simulator results only; nothing below is validated on
-a GPU yet. Costs are placeholders until `microbench` runs.
+Status as of 2026-10-06. Simulator results, now including one run with costs
+measured on a Modal L4 (`costs_l4.json`). No live vLLM replay yet.
 
 ## Thesis
 
@@ -12,9 +12,16 @@ agent awareness there, and *not* using it to prefetch from disk over a
 contended link, reduces tail resumption latency beyond GPU/CPU-only
 agent-aware policies.
 
-**Hypothesis.** With predicted reuse times, agent-aware CPU->NVMe demotion
-reduces p90 resumption TTFT by >=10% over a GPU/CPU-only agent-aware policy,
-with no extra disk traffic. Falsified if the margin is <10% on a GPU.
+**Hypothesis.** When the agents' KV working set exceeds GPU+CPU memory and
+disk reads are a bottleneck, agent-aware CPU->disk demotion reduces p90
+resumption TTFT by >=10% over a GPU/CPU-only agent-aware policy, with no
+extra disk traffic and with realistic (tool-metadata) predictors. Falsified
+if the margin is <10% in that regime on a GPU.
+
+**The trade-off it reveals.** The value of agent awareness at the disk
+boundary is set by disk read cost relative to everything else: large on slow
+or networked storage, near zero on fast NVMe with a slow GPU or when DRAM
+holds the working set.
 
 ## State of the art and the gap
 
@@ -49,6 +56,48 @@ GPU = 12k blocks, prefetch and demand sharing one disk link
   prediction error (approx. is within ~4% of oracle): demotion only needs a
   ranking of sessions, not their timing.
 - It fails the bar when the CPU tier is too small to hold the working set.
+
+**With realistic predictors** (every policy, LRU included, sends the same
+hint-only requests; `tool` = global tool median, `toolsess` = session-local
+per-tool EWMA):
+
+| CPU blocks / disk | LRU | GPU/CPU-aware | Both | Both vs GPU/CPU-aware |
+|---|---:|---:|---:|---:|
+| 24k / 7 GB/s | 6.26 | 5.09 | **4.09** (`tool`) | **-20%** |
+| 96k / 3 GB/s | 2.39 | 2.54 | **1.89** (`toolsess`) | **-26%** |
+| 96k / 7 GB/s | 1.36 | 1.34 | 1.22 (`toolsess`) | -9% |
+
+A rough ranking suffices: the global tool median gets most of the gain. Tool
+arguments would not be needed (CATraces, the only public trace with tool
+calls per session besides TraceLab, redacts them anyway).
+
+**Realistic GPU size** (65k blocks, H100-class; approx. prediction, p90):
+
+| CPU blocks / disk | LRU | GPU/CPU-aware | Both | Both vs GPU/CPU-aware |
+|---|---:|---:|---:|---:|
+| 130k / 3 GB/s | 1.33 | 1.27 | **1.00** | **-21%** |
+| 130k / 7 GB/s | 1.08 | 1.06 | **0.92** | **-14%** |
+| 260k / 3 GB/s | 0.90 | 0.88 | 0.84 | -4% |
+| 260k / 7 GB/s | 0.88 | 0.85 | 0.84 | -1% |
+
+The ~24 concurrent sessions in the arrival window (~120k blocks of KV) fit in
+GPU + 260k CPU blocks (~240 GB DRAM), so little reaches disk and policies
+converge. The gain needs a working set larger than DRAM.
+
+**Measured costs (Modal L4, Qwen2.5-7B).** GPU<->CPU 13.5 GB/s, container
+disk reads 0.93 GB/s, prefill 3.3k tok/s, decode 57 ms/token. GPU = 8k blocks,
+0.01 sessions/s (what one L4 can sustain), p90 with the `tool` predictor:
+
+| CPU blocks / disk | LRU | GPU/CPU-aware | Both | Both vs GPU/CPU-aware |
+|---|---:|---:|---:|---:|
+| 48k / 0.93 GB/s (measured) | 26.5 | 14.2 | **7.9** | **-45%** |
+| 48k / 7 GB/s | 2.88 | 2.91 | 2.87 | -1% |
+| 24k / 7 GB/s | 3.16 | 3.31 | 3.35 | +1% |
+
+On the measured (likely network-backed) disk the read link saturates and
+demotion choices dominate; with NVMe-speed reads the slow L4 prefill
+dominates instead and placement stops mattering. 24k / 0.93 GB/s is
+saturated for every policy (p90 70-100 s) and omitted.
 
 **Why not prefetch from disk** (same setup, p90):
 
@@ -85,16 +134,16 @@ reads delay demand loads on the shared link.
 
 ## Caveats and next checks
 
-- The simulated GPU is small (12k blocks, ~190k tokens). A realistic H100 with
-  a 7B model holds ~65k blocks, which gives GPU-side awareness more room and
-  may shrink our margin. **Next check.**
-- "Approx." is unbiased noise with an exact session-end flag. A real predictor
-  is needed: tool-name medians are much worse (median error 3.4x, p90 80x),
-  mostly from Bash. An argument-aware predictor needs a trace with tool
-  arguments (CATraces, `cachewise-project/cachewise-coding-traces`).
-- The gain is moderate (0.2-0.8 s at p90) and mostly in the tail.
-- Simulator only: placeholder costs, FIFO unchunked prefill, uncontended
-  GPU<->CPU link. Needs Modal microbenchmarks and live vLLM runs.
+- The regime matters more than the policy: gains are 14-45% where disk reads
+  bottleneck and the working set exceeds DRAM, and ~0 elsewhere. The
+  presentation should lead with this map, not a single number.
+- Only one GPU type measured (L4). Its container disk is not a local NVMe. An
+  H100 with local NVMe is the most relevant missing point.
+- Tool-name predictors have large errors (median 3.2x, p90 80x; session-local
+  EWMA: rank correlation 0.53 vs 0.43), yet demotion still gains, because it
+  needs only a ranking.
+- Simulator only: FIFO unchunked prefill, uncontended GPU<->CPU link, no GPU
+  working-set pinning. Needs live vLLM replay at one or two map points.
 - vLLM implementation: demotion is a `CachePolicy` (exists:
   `vllm_policy.ReuseAwareCachePolicy`); gated prefetch would use the tiering
   manager's promotion path from `on_schedule_end`.
@@ -110,6 +159,15 @@ for seed in 0 1; do
 done
 .venv/bin/python -m kvplace.tier_sweep research/traces/tl300_sp_s1.jsonl \
   --policies gpu_aware reuse_evict gpu_cpu_aware reuse
+.venv/bin/python -m kvplace.tier_sweep research/traces/tl300_sp_s1.jsonl \
+  --predictors tool toolsess
+# measured costs (uvx --from modal modal run research/modal_microbench.py --gpu L4)
+.venv/bin/python -m kvplace.tracelab research/traces/syfi_coding_trace.jsonl.gz \
+  -o research/traces/tl300_sp_s1_r0.01.jsonl --provider claude \
+  --rebase-rate 0.01 --sessions 300 --max-context 200000 --seed 1
+.venv/bin/python -m kvplace.tier_sweep research/traces/tl300_sp_s1_r0.01.jsonl \
+  --cost-json research/costs_l4.json --gpu-blocks 8000 \
+  --configs 24000:m 48000:m 24000:7 48000:7 --predictors tool noisy:1.0
 .venv/bin/python -m kvplace.headroom breakdown research/traces/tl300_sp_s1.jsonl
 .venv/bin/python -m kvplace.restore_sweep --tune research/traces/tl300_sp_s0.jsonl \
   --test research/traces/tl300_sp_s1.jsonl

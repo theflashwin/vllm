@@ -34,8 +34,10 @@ METRICS = (
 
 
 def _run(job: tuple) -> dict:
-    trace, gpu, cpu, sec_gbps, policy, predictor = job
-    cost = replace(CostModel(), sec_cpu_gbps=sec_gbps)
+    trace, gpu, cpu, sec_gbps, policy, predictor, cost_json = job
+    cost = CostModel.from_json(cost_json) if cost_json else CostModel()
+    if sec_gbps is not None:
+        cost = replace(cost, sec_cpu_gbps=sec_gbps)
     summary = (
         Simulator(
             read_trace(trace),
@@ -53,7 +55,7 @@ def _run(job: tuple) -> dict:
     return {
         "gpu_blocks": gpu,
         "cpu_blocks": cpu,
-        "sec_cpu_gbps": sec_gbps,
+        "sec_cpu_gbps": cost.sec_cpu_gbps,
         "policy": policy,
         "predictor": predictor,
         **{m: summary[m] for m in METRICS},
@@ -68,8 +70,9 @@ def main() -> None:
         "--configs",
         nargs="+",
         default=["24000:7", "96000:3", "96000:7"],
-        help="cpu_blocks:secondary_read_gbps",
+        help="cpu_blocks:secondary_read_gbps ('m' keeps the measured value)",
     )
+    p.add_argument("--cost-json", help="CostModel overrides (microbench output)")
     p.add_argument(
         "--policies", nargs="+", default=["gpu_aware", "reuse_evict", "gpu_cpu_aware"]
     )
@@ -81,10 +84,14 @@ def main() -> None:
     jobs = []
     for config in args.configs:
         cpu, sec_gbps = config.split(":")
-        base = (args.trace, args.gpu_blocks, int(cpu), float(sec_gbps))
-        jobs.append((*base, "lru", "none"))
+        sec = None if sec_gbps == "m" else float(sec_gbps)
+        base = (args.trace, args.gpu_blocks, int(cpu), sec)
+        # LRU gets each predictor too: post-response predictors add hint-only
+        # requests, which LRU must also see for a matched comparison.
         jobs += [
-            (*base, pol, pred) for pol in args.policies for pred in args.predictors
+            (*base, pol, pred, args.cost_json)
+            for pol in ("lru", *args.policies)
+            for pred in args.predictors
         ]
     with ProcessPoolExecutor(args.workers) as ex:
         rows = list(ex.map(_run, jobs))
