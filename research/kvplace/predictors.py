@@ -108,13 +108,39 @@ class ToolMedian:
         return ReuseHint(session.session_id, k, est)
 
 
+class ToolSessionEWMA(ToolMedian):
+    """Post-response: EWMA of this session's earlier durations of the chosen
+    tool, falling back to the global median of that tool. The same command
+    tends to recur within a session (e.g. a test suite), which the global
+    median of a broad tool like Bash cannot see."""
+
+    def __init__(self, alpha: float = 0.5, window: int = 200, min_samples: int = 3):
+        super().__init__(window, min_samples)
+        self.alpha = alpha
+
+    def __call__(self, session: Session, k: int, gaps: list[float]) -> ReuseHint:
+        hint = super().__call__(session, k, gaps)
+        if hint.final:
+            return hint
+        tool = session.turns[k].tool_name
+        est = None
+        for prev in session.turns[:k]:
+            if prev.tool_name == tool:
+                d = prev.tool_duration_s
+                est = d if est is None else self.alpha * d + (1 - self.alpha) * est
+        if est is None:
+            return hint
+        return ReuseHint(session.session_id, k, est)
+
+
 def is_post_response(predictor: Predictor) -> bool:
     return getattr(predictor, "post_response", False)
 
 
 def get_predictor(name: str) -> Predictor:
     """Names: none, oracle, noisy:<sigma>, ewma[:<alpha>], tool[:<window>],
-    toolq:<quantile> (a tool-duration quantile instead of the median)."""
+    toolq:<quantile> (a tool-duration quantile instead of the median),
+    toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback)."""
     kind, _, arg = name.partition(":")
     if kind == "none":
         return no_hints
@@ -126,6 +152,8 @@ def get_predictor(name: str) -> Predictor:
         return make_session_ewma(float(arg or 0.5))
     if kind == "tool":
         return ToolMedian(int(arg or 200))
+    if kind == "toolsess":
+        return ToolSessionEWMA(float(arg or 0.5))
     if kind == "toolq":
         return ToolMedian(quantile=float(arg))
     raise ValueError(f"unknown predictor {name!r}")
