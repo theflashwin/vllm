@@ -121,7 +121,8 @@ class ReuseAwareTier(LRUTier):
       * session marked final           -> +inf (evict first)
       * hinted reuse at t, not overdue -> t
       * overdue by d                   -> now + d (long tools tend to run long)
-      * no hint                        -> last_use + default_horizon_s
+      * no hint                        -> last_use + default_horizon_s,
+                                          aging like an overdue hint
       * shared blocks                  -> -inf (keep; evicted only via LRU
                                           fallback when nothing else is left)
     """
@@ -140,10 +141,12 @@ class ReuseAwareTier(LRUTier):
             return -math.inf
         if sid in self.final:
             return math.inf
-        if sid in self.deadline:
-            t = self.deadline[sid]
-            return t if t >= now else now + (now - t)
-        return self.last_use.get(sid, now) + self.default_horizon_s
+        t = self.deadline.get(sid)
+        if t is None:
+            # Unhinted: same aging as an overdue hint, so idle sessions without
+            # a prediction do not look "about to return" forever.
+            t = self.last_use.get(sid, now) + self.default_horizon_s
+        return t if t >= now else now + (now - t)
 
     def set_hint(self, session_id: str, hint: ReuseHint | None, now: float) -> None:
         if hint is not None:

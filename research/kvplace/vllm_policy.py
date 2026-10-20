@@ -74,9 +74,12 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         sid = owner
         if sid in self._final:
             return math.inf
-        if (t := self._deadline.get(sid)) is not None:
-            return t if t >= now else now + (now - t)
-        return self._last_use.get(sid, now) + self.default_horizon_s
+        t = self._deadline.get(sid)
+        if t is None:
+            # Unhinted: assume reuse a default horizon after last use, and let
+            # it age like an overdue hint so idle sessions do not stick.
+            t = self._last_use.get(sid, now) + self.default_horizon_s
+        return t if t >= now else now + (now - t)
 
     @override
     def on_store_miss(
