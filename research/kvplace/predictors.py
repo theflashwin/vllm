@@ -76,15 +76,29 @@ def make_session_ewma(alpha: float = 0.5) -> Predictor:
 
 class ToolMedian:
     """Post-response: median (or `quantile`) of recently observed durations of
-    the tool the agent just chose (learned online across all sessions). The
-    final flag is exact, since a response without a tool call ends the
-    session."""
+    the tool the agent just chose (learned online across all sessions).
+
+    With `exact_final`, the session's last turn is flagged final. That uses
+    the trace's knowledge of where the session ends: a real agent only knows
+    the response called no tool, i.e. it is waiting on the user. Without it,
+    that turn is predicted like any other "human" wait."""
 
     post_response = True
 
-    def __init__(self, window: int = 200, min_samples: int = 3, quantile: float = 0.5):
+    def __init__(
+        self,
+        window: int = 200,
+        min_samples: int = 3,
+        quantile: float = 0.5,
+        exact_final: bool = True,
+        human_quantile: float | None = None,
+    ):
         self.min_samples = min_samples
         self.quantile = quantile
+        self.exact_final = exact_final
+        # Waits on the user are heavy-tailed and may be the session's end;
+        # predicting them with a high quantile keeps them out of CPU.
+        self.human_quantile = human_quantile
         self.history: dict[str, deque[float]] = defaultdict(
             lambda: deque(maxlen=window)
         )
@@ -94,17 +108,22 @@ class ToolMedian:
             self.history[tool_name].append(duration_s)
 
     def __call__(self, session: Session, k: int, gaps: list[float]) -> ReuseHint:
-        turn = session.turns[k]
+        tool = session.turns[k].tool_name
         if k == len(session.turns) - 1:
-            return ReuseHint(session.session_id, k, None, final=True)
-        h = self.history.get(turn.tool_name)
+            if self.exact_final:
+                return ReuseHint(session.session_id, k, None, final=True)
+            tool = "human"
+        h = self.history.get(tool)
+        q = self.quantile
+        if tool == "human" and self.human_quantile is not None:
+            q = self.human_quantile
         est = None
         if h and len(h) >= self.min_samples:
-            if self.quantile == 0.5:
+            if q == 0.5:
                 est = statistics.median(h)
             else:
                 xs = sorted(h)
-                est = xs[min(len(xs) - 1, int(self.quantile * len(xs)))]
+                est = xs[min(len(xs) - 1, int(q * len(xs)))]
         return ReuseHint(session.session_id, k, est)
 
 
@@ -114,8 +133,14 @@ class ToolSessionEWMA(ToolMedian):
     tends to recur within a session (e.g. a test suite), which the global
     median of a broad tool like Bash cannot see."""
 
-    def __init__(self, alpha: float = 0.5, window: int = 200, min_samples: int = 3):
-        super().__init__(window, min_samples)
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        window: int = 200,
+        min_samples: int = 3,
+        exact_final: bool = True,
+    ):
+        super().__init__(window, min_samples, exact_final=exact_final)
         self.alpha = alpha
 
     def __call__(self, session: Session, k: int, gaps: list[float]) -> ReuseHint:
@@ -140,8 +165,15 @@ def is_post_response(predictor: Predictor) -> bool:
 def get_predictor(name: str) -> Predictor:
     """Names: none, oracle, noisy:<sigma>, ewma[:<alpha>], tool[:<window>],
     toolq:<quantile> (a tool-duration quantile instead of the median),
-    toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback)."""
+    toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback).
+    A `-nf` suffix on tool/toolq/toolsess drops the exact session-end flag;
+    `tool-nfh` also predicts waits on the user with their 90th percentile."""
     kind, _, arg = name.partition(":")
+    human_q = None
+    if kind.endswith("-nfh"):
+        human_q, kind = 0.9, kind.removesuffix("h")
+    exact_final = not kind.endswith("-nf")
+    kind = kind.removesuffix("-nf")
     if kind == "none":
         return no_hints
     if kind == "oracle":
@@ -151,9 +183,11 @@ def get_predictor(name: str) -> Predictor:
     if kind == "ewma":
         return make_session_ewma(float(arg or 0.5))
     if kind == "tool":
-        return ToolMedian(int(arg or 200))
+        return ToolMedian(
+            int(arg or 200), exact_final=exact_final, human_quantile=human_q
+        )
     if kind == "toolsess":
-        return ToolSessionEWMA(float(arg or 0.5))
+        return ToolSessionEWMA(float(arg or 0.5), exact_final=exact_final)
     if kind == "toolq":
-        return ToolMedian(quantile=float(arg))
+        return ToolMedian(quantile=float(arg), exact_final=exact_final)
     raise ValueError(f"unknown predictor {name!r}")

@@ -211,3 +211,32 @@ def test_session_tool_predictor_uses_this_sessions_history():
         "s", 0.0, [Turn(10, 1, "Bash", 300.0), Turn(10, 1, "Bash", 280.0), Turn(1, 1)]
     )
     assert p(s, 1, []).expected_reuse_s == 300.0
+
+
+def test_nf_predictor_does_not_know_where_the_session_ends():
+    """Without the trace's end-of-session knowledge, a response that calls no
+    tool is predicted like a wait for the user, not flagged final."""
+    from kvplace.predictors import get_predictor
+
+    s = Session("s", 0.0, [Turn(10, 1, "human", 60.0), Turn(10, 1)])
+    exact, nf = get_predictor("tool"), get_predictor("tool-nf")
+    for p in (exact, nf):
+        for _ in range(3):
+            p.observe("human", 60.0)
+    assert exact(s, 1, []).final
+    hint = nf(s, 1, [])
+    assert not hint.final and hint.expected_reuse_s == 60.0
+
+
+def test_unhinted_idle_session_eventually_evicted_before_hinted_one():
+    """A session that never got a prediction must not look "about to return"
+    forever: once idle well past the default horizon it is evicted before a
+    session predicted to return soon."""
+    from kvplace.sim import ReuseAwareTier
+
+    tier = ReuseAwareTier(capacity=4)
+    tier.insert([("stale", 0), ("stale", 1)], now=0.0)
+    tier.insert([("soon", 0), ("soon", 1)], now=0.0)
+    tier.set_hint("soon", ReuseHint("soon", 0, 10.0), now=990.0)
+    evicted = tier.insert([("new", 0), ("new", 1)], now=1000.0)
+    assert {sid for sid, _ in evicted} == {"stale"}
