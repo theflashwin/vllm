@@ -1,7 +1,8 @@
 # Project direction: agent-aware demotion to the disk tier
 
-Status as of 2026-10-06. Simulator results, now including one run with costs
-measured on a Modal L4 (`costs_l4.json`). No live vLLM replay yet.
+Status as of 2026-10-20. Simulator results over 5 trace samples, with one
+setting calibrated by costs measured on a Modal L4 (`costs_l4.json`). No live
+vLLM replay yet.
 
 ## Thesis
 
@@ -38,7 +39,35 @@ No system we found uses agent signals at the CPU->disk boundary. Refs 8 and 9
 of the original proposal are not used: both are unreviewed preprints without
 code (batch-one synthetic simulation; analytical projections).
 
-## Evidence
+## Current results (5 trace samples, after the aging fix)
+
+`kvplace.multiseed`: 5 random samples (seeds 1-5) of 300 TraceLab Claude Code
+sessions per setting. Realistic predictor `tool-nfh`: per-tool median of the
+last 200 calls, user waits at the 90th percentile, no knowledge of when a
+session ends. Every policy gets the same hint traffic; prefetch and demand
+share one disk link. p90 resumption TTFT in seconds, mean over samples:
+
+| Setting (GPU / CPU blocks, disk) | LRU | GPU-aware | Ours | Ours vs GPU-aware | Per sample |
+|---|---:|---:|---:|---:|---|
+| L4 costs, 8k / 48k, 0.93 GB/s | 48.9 | 45.2 | 10.7 | -61% ± 29% | wins 5/5 (-15 to -86%) |
+| 12k / 24k, 7 GB/s | 4.27 | 3.76 | 3.35 | -10% ± 7% | wins 5/5 (-5 to -21%) |
+| 12k / 96k, 3 GB/s | 2.27 | 2.15 | 1.64 | -21% ± 13% | wins 5/5 (-6 to -42%) |
+| 65k / 260k, 3 GB/s | 0.84 | 0.83 | 0.88 | +7% ± 3% | loses 5/5 |
+
+Opportunity gap (12k / 96k, 3 GB/s), reduction vs GPU-aware: oracle 34% ± 3%,
+oracle with ~2x error 31% ± 3%, tool median + session-end signal 22% ± 10%,
+realistic 21% ± 13%.
+
+**The aging fix.** Sessions with no prediction used to score "last use + 30 s"
+forever, so finished sessions looked about to return and were never evicted.
+On 2 of 5 samples they filled most of the CPU tier and p90 rose to 36-62 s.
+Unpredicted sessions now age like late ones (`ReuseAwareTier._score`,
+`ReuseAwareCachePolicy._score`). This also removed the apparent dependence on
+a session-end signal, which had only been masking the bug.
+
+The single-sample tables below predate the fix and are kept for history.
+
+## Earlier single-sample evidence
 
 All on 300 held-out TraceLab Claude Code sessions (`tl300_sp_s1.jsonl`),
 GPU = 12k blocks, prefetch and demand sharing one disk link
@@ -144,14 +173,14 @@ reads delay demand loads on the shared link.
 6. **Uncontended prefetch was an artifact.** Without link contention, disk
    prefetch looked worth -33% even with noisy predictions; with contention it
    is neutral or harmful. What survives is agent-aware demotion.
+7. **One sample hid a policy bug.** Repeating runs on 5 samples exposed the
+   unaged unpredicted sessions (see Current results).
 
 ## Caveats and next checks
 
-- The regime matters more than the policy. Gains over GPU/CPU-aware:
-  -45% on the measured slow disk (0.93 GB/s), -20 to -26% on memory-tight
-  hosts (12k GPU / 96k CPU blocks), 0 to -6% on an H100-class GPU with
-  >=240 GB DRAM at any tested disk speed and load. The presentation should
-  lead with this map, not a single number.
+- The regime matters more than the policy. Gains over GPU/CPU-aware
+  (5 samples): -61% on the measured slow disk, -10 to -21% on memory-tight
+  hosts, +7% (worse) on an H100-size server where KV fits in DRAM.
 - Untested regimes where it may matter more: models with larger KV per token
   (no GQA, longer contexts), network-attached cloud disks, more sessions per
   GPU via tensor parallelism.
@@ -170,6 +199,15 @@ reads delay demand loads on the shared link.
 
 ```bash
 export PYTHONPATH=$PWD/research
+# current results: traces for seeds 1-5 at 0.05/s and 0.01/s, then
+for seed in 1 2 3 4 5; do for r in 0.05 0.01; do
+  sfx=$([ $r = 0.01 ] && echo _r0.01)
+  .venv/bin/python -m kvplace.tracelab research/traces/syfi_coding_trace.jsonl.gz \
+    -o research/traces/tl300_sp_s$seed$sfx.jsonl --provider claude \
+    --rebase-rate $r --sessions 300 --max-context 200000 --seed $seed
+done; done
+(cd research && ../.venv/bin/python -m kvplace.multiseed --out results/multiseed.json)
+# earlier single-sample runs
 for seed in 0 1; do
   .venv/bin/python -m kvplace.tracelab research/traces/syfi_coding_trace.jsonl.gz \
     -o research/traces/tl300_sp_s$seed.jsonl --provider claude \
