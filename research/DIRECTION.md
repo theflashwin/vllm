@@ -65,6 +65,24 @@ Unpredicted sessions now age like late ones (`ReuseAwareTier._score`,
 `ReuseAwareCachePolicy._score`). This also removed the apparent dependence on
 a session-end signal, which had only been masking the bug.
 
+**Elapsed-aware prediction (`toolres-nfh`).** Waits are bimodal on a log
+scale (instant calls around 0.05 s, then a plateau from 1 s to minutes), so
+the hint also carries a per-tool residual table: the median remaining wait of
+past calls that already ran e seconds, for e on a log grid. The tier scores a
+waiting session as now + remaining(elapsed). Ours, p90 s, same 5 samples:
+
+| Setting | `tool-nfh` | `toolres-nfh` | Ours vs GPU-aware |
+|---|---:|---:|---:|
+| L4 costs, 8k / 48k | 10.68 | 10.76 | -61% -> -61% |
+| 12k / 24k, 7 GB/s | 3.35 | 3.35 | -10% -> -10% |
+| 12k / 96k, 3 GB/s | 1.64 | 1.61 | -21% -> -25% |
+| 65k / 260k, 3 GB/s | 0.88 | **0.84** | +7% -> **+2%** |
+
+No gain where we already win: the learned residual is roughly e to 2e for
+most tools, which the aging rule already assumes. (The -25% comes mostly
+from the GPU-aware baseline getting worse on one sample.) It does shrink the
+loss when KV fits in DRAM: ours improves on 4 of 5 samples there, none worse.
+
 The single-sample tables below predate the fix and are kept for history.
 
 ## Earlier single-sample evidence

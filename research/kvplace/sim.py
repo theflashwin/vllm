@@ -33,9 +33,9 @@ import math
 import statistics
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
-from kvplace.hints import ReuseHint
+from kvplace.hints import ReuseHint, expected_remaining
 from kvplace.predictors import Predictor, get_predictor, is_post_response
 from kvplace.trace import Session, read_trace
 
@@ -123,6 +123,8 @@ class ReuseAwareTier(LRUTier):
       * overdue by d                   -> now + d (long tools tend to run long)
       * no hint                        -> last_use + default_horizon_s,
                                           aging like an overdue hint
+      * residual table, waited e       -> now + expected remaining after e
+                                          (replaces the two rules above)
       * shared blocks                  -> -inf (keep; evicted only via LRU
                                           fallback when nothing else is left)
     """
@@ -135,12 +137,17 @@ class ReuseAwareTier(LRUTier):
         self.last_use: dict[str, float] = {}
         self.latest_turn: dict[str, int] = {}
         self.by_session: dict[str, set[int]] = defaultdict(set)
+        # Residual table and the time it was received.
+        self.residual: dict[str, tuple[tuple[float, float], ...]] = {}
+        self.hinted_at: dict[str, float] = {}
 
     def _score(self, sid: str, now: float) -> float:
         if sid == SHARED:
             return -math.inf
         if sid in self.final:
             return math.inf
+        if (table := self.residual.get(sid)) is not None:
+            return now + expected_remaining(table, now - self.hinted_at[sid])
         t = self.deadline.get(sid)
         if t is None:
             # Unhinted: same aging as an overdue hint, so idle sessions without
@@ -155,6 +162,7 @@ class ReuseAwareTier(LRUTier):
             self.latest_turn[session_id] = hint.turn
         self.last_use[session_id] = now
         self.deadline.pop(session_id, None)
+        self.residual.pop(session_id, None)
         if hint is None:
             return
         if hint.final:
@@ -163,6 +171,9 @@ class ReuseAwareTier(LRUTier):
             self.final.discard(session_id)
             if hint.expected_reuse_s is not None:
                 self.deadline[session_id] = now + hint.expected_reuse_s
+            if hint.residual is not None:
+                self.residual[session_id] = hint.residual
+                self.hinted_at[session_id] = now
 
     def touch(self, keys: Iterable[BlockKey], now: float) -> None:
         super().touch(keys, now)
@@ -666,11 +677,10 @@ class Simulator:
     def _scaled(self, hint: ReuseHint | None) -> ReuseHint | None:
         if hint is None or hint.expected_reuse_s is None or self.time_scale == 1:
             return hint
-        return ReuseHint(
-            hint.session_id,
-            hint.turn,
-            hint.expected_reuse_s * self.time_scale,
-            hint.final,
+        ts = self.time_scale
+        residual = hint.residual and tuple((e * ts, r * ts) for e, r in hint.residual)
+        return replace(
+            hint, expected_reuse_s=hint.expected_reuse_s * ts, residual=residual
         )
 
     def _secondary_write_mode(self, hint: ReuseHint | None) -> str:
