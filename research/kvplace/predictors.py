@@ -21,6 +21,7 @@ import statistics
 import zlib
 from collections import defaultdict, deque
 from collections.abc import Callable
+from dataclasses import replace
 
 from kvplace.hints import ReuseHint
 from kvplace.trace import Session
@@ -158,6 +159,42 @@ class ToolSessionEWMA(ToolMedian):
         return ReuseHint(session.session_id, k, est)
 
 
+class ToolResidual(ToolMedian):
+    """ToolMedian plus a residual table: for each elapsed time on the grid,
+    the median remaining wait of past calls of that tool that ran at least
+    that long. Waits are bimodal (instant calls vs. real work), so a call
+    still running after ~1 s is likely in the slow mode; the table lets the
+    cache see that instead of aging every late session the same way."""
+
+    GRID = (0.0, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0, 3000.0)
+
+    def __init__(self, window: int = 1000, min_survivors: int = 5, **kw):
+        super().__init__(window, **kw)
+        self.min_survivors = min_survivors
+
+    def _table(self, tool: str, q: float) -> tuple[tuple[float, float], ...] | None:
+        xs = sorted(self.history.get(tool, ()))
+        table = []
+        for e in self.GRID:
+            rest = [x - e for x in xs if x > e]
+            if len(rest) < self.min_survivors:
+                break
+            table.append((e, rest[min(len(rest) - 1, int(q * len(rest)))]))
+        return tuple(table) or None
+
+    def __call__(self, session: Session, k: int, gaps: list[float]) -> ReuseHint:
+        hint = super().__call__(session, k, gaps)
+        if hint.final:
+            return hint
+        tool = session.turns[k].tool_name
+        q = self.quantile
+        if k == len(session.turns) - 1 or tool == "human":
+            tool = "human"
+            if self.human_quantile is not None:
+                q = self.human_quantile
+        return replace(hint, residual=self._table(tool, q))
+
+
 def is_post_response(predictor: Predictor) -> bool:
     return getattr(predictor, "post_response", False)
 
@@ -165,7 +202,8 @@ def is_post_response(predictor: Predictor) -> bool:
 def get_predictor(name: str) -> Predictor:
     """Names: none, oracle, noisy:<sigma>, ewma[:<alpha>], tool[:<window>],
     toolq:<quantile> (a tool-duration quantile instead of the median),
-    toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback).
+    toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback),
+    toolres[:<window>] (tool median plus elapsed-aware residual table).
     A `-nf` suffix on tool/toolq/toolsess drops the exact session-end flag;
     `tool-nfh` also predicts waits on the user with their 90th percentile."""
     kind, _, arg = name.partition(":")
@@ -185,6 +223,10 @@ def get_predictor(name: str) -> Predictor:
     if kind == "tool":
         return ToolMedian(
             int(arg or 200), exact_final=exact_final, human_quantile=human_q
+        )
+    if kind == "toolres":
+        return ToolResidual(
+            int(arg or 1000), exact_final=exact_final, human_quantile=human_q
         )
     if kind == "toolsess":
         return ToolSessionEWMA(float(arg or 0.5), exact_final=exact_final)

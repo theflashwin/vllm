@@ -30,6 +30,10 @@ class ReuseHint:
     expected_reuse_s: float | None = None
     # True if the session ends after this request (prefix will not be reused).
     final: bool = False
+    # Optional (elapsed_s, expected_remaining_s) breakpoints: the expected
+    # remaining wait once the session has already waited elapsed_s. Lets the
+    # cache re-rank sessions as they wait instead of trusting one estimate.
+    residual: tuple[tuple[float, float], ...] | None = None
 
     def to_kv_transfer_params(self) -> dict[str, Any]:
         return {HINT_KEY: asdict(self)}
@@ -53,7 +57,30 @@ def _from_payload(payload: Any) -> ReuseHint | None:
         turn=int(payload.get("turn", 0)),
         expected_reuse_s=None if reuse is None else float(reuse),
         final=bool(payload.get("final", False)),
+        residual=_residual(payload.get("residual")),
     )
+
+
+def _residual(raw: Any) -> tuple[tuple[float, float], ...] | None:
+    if not raw:
+        return None
+    return tuple((float(e), float(r)) for e, r in raw)
+
+
+def expected_remaining(
+    residual: tuple[tuple[float, float], ...], elapsed_s: float
+) -> float:
+    """Expected remaining wait after `elapsed_s`, interpolated between
+    breakpoints; past the last one, assume it lasts as long again."""
+    prev_e, prev_r = residual[0]
+    if elapsed_s <= prev_e:
+        return prev_r
+    for e, r in residual[1:]:
+        if elapsed_s <= e:
+            f = (elapsed_s - prev_e) / (e - prev_e)
+            return prev_r + f * (r - prev_r)
+        prev_e, prev_r = e, r
+    return max(prev_r, elapsed_s)
 
 
 def parse_hint(req_context: Any) -> ReuseHint | None:

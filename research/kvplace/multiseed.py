@@ -72,15 +72,17 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3, 4, 5])
     p.add_argument("--settings", nargs="+", default=list(SETTINGS))
+    p.add_argument("--predictors", nargs="+", help="override each setting's predictors")
     p.add_argument("--workers", type=int, default=6)
     p.add_argument("--out")
     args = p.parse_args()
+    preds = {s: args.predictors or SETTINGS[s][5] for s in args.settings}
 
     jobs = [
         (s, seed, pol, pred)
         for s in args.settings
         for seed in args.seeds
-        for pred in SETTINGS[s][5]
+        for pred in preds[s]
         for pol in POLICIES
     ]
     with ProcessPoolExecutor(args.workers) as ex:
@@ -97,7 +99,7 @@ def main() -> None:
     summary = []
     print("setting\tpredictor\tlru\tgpu_aware\tours\tgain_vs_gpu_aware")
     for s in args.settings:
-        for pred in SETTINGS[s][5]:
+        for pred in preds[s]:
             vals = {
                 pol: [p90(s, seed, pol, pred) for seed in args.seeds]
                 for pol in POLICIES
