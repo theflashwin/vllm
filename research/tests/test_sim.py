@@ -211,3 +211,68 @@ def test_session_tool_predictor_uses_this_sessions_history():
         "s", 0.0, [Turn(10, 1, "Bash", 300.0), Turn(10, 1, "Bash", 280.0), Turn(1, 1)]
     )
     assert p(s, 1, []).expected_reuse_s == 300.0
+
+
+def test_nf_predictor_does_not_know_where_the_session_ends():
+    """Without the trace's end-of-session knowledge, a response that calls no
+    tool is predicted like a wait for the user, not flagged final."""
+    from kvplace.predictors import get_predictor
+
+    s = Session("s", 0.0, [Turn(10, 1, "human", 60.0), Turn(10, 1)])
+    exact, nf = get_predictor("tool"), get_predictor("tool-nf")
+    for p in (exact, nf):
+        for _ in range(3):
+            p.observe("human", 60.0)
+    assert exact(s, 1, []).final
+    hint = nf(s, 1, [])
+    assert not hint.final and hint.expected_reuse_s == 60.0
+
+
+def test_unhinted_idle_session_eventually_evicted_before_hinted_one():
+    """A session that never got a prediction must not look "about to return"
+    forever: once idle well past the default horizon it is evicted before a
+    session predicted to return soon."""
+    from kvplace.sim import ReuseAwareTier
+
+    tier = ReuseAwareTier(capacity=4)
+    tier.insert([("stale", 0), ("stale", 1)], now=0.0)
+    tier.insert([("soon", 0), ("soon", 1)], now=0.0)
+    tier.set_hint("soon", ReuseHint("soon", 0, 10.0), now=990.0)
+    evicted = tier.insert([("new", 0), ("new", 1)], now=1000.0)
+    assert {sid for sid, _ in evicted} == {"stale"}
+
+
+def test_residual_predictor_switches_to_the_slow_mode():
+    """A bimodal tool: the median is the fast mode, but a call that outlives
+    it is predicted from the slow calls only."""
+    from kvplace.predictors import ToolResidual
+
+    p = ToolResidual(exact_final=False)
+    for d in [0.1] * 11 + [100.0] * 9:
+        p.observe("Bash", d)
+    s = Session("s", 0.0, [Turn(10, 1, "Bash", 0.1), Turn(10, 1)])
+    hint = p(s, 0, [])
+    assert hint.expected_reuse_s == 0.1
+    assert dict(hint.residual)[0.3] == 99.7
+
+
+def test_late_session_ranked_by_its_residual_wait():
+    """Both sessions were predicted back in 1 s and are equally late. The
+    residual table says x is now in its slow mode, so x goes first."""
+    from kvplace.sim import ReuseAwareTier
+
+    tier = ReuseAwareTier(capacity=4)
+    tier.insert([("x", 0), ("x", 1)], now=0.0)
+    tier.insert([("y", 0), ("y", 1)], now=0.0)
+    tier.set_hint("y", ReuseHint("y", 0, 1.0), now=0.0)
+    tier.set_hint("x", ReuseHint("x", 0, 1.0, residual=((0, 1), (1, 600))), now=0.0)
+    evicted = tier.insert([("new", 0), ("new", 1)], now=10.0)
+    assert {sid for sid, _ in evicted} == {"x"}
+
+
+def test_expected_remaining_interpolates_and_extends():
+    from kvplace.hints import expected_remaining
+
+    table = ((0.0, 1.0), (10.0, 21.0))
+    assert expected_remaining(table, 5.0) == 11.0
+    assert expected_remaining(table, 50.0) == 50.0
