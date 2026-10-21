@@ -95,6 +95,19 @@ def test_unhinted_requests_fall_back_to_lru(setup):
     assert set(out.evicted_keys) == set(keys(1, 2))
 
 
+def test_unowned_chunks_age(setup):
+    """Unowned chunks stored long ago must not outlast a slightly late session."""
+    manager, clock = setup
+    run_request(manager, ctx("r0", None), keys(1, 2))
+    clock.t = 50.0
+    run_request(manager, ctx("a0", ReuseHint("a", 0, 1.0)), keys(3, 4))
+    clock.t = 100.0
+
+    out = run_request(manager, ctx("r1", None), keys(5))
+
+    assert out.evicted_keys == keys(2)  # tail first, as for sessions
+
+
 def test_hint_only_request_updates_deadline(setup):
     """A post-response hint evicts original blocks, not only its padding block."""
     manager, clock = setup

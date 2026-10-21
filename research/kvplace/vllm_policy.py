@@ -51,6 +51,8 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         self._final: set[str] = set()
         self._last_use: dict[str, float] = {}
         self._latest_turn: dict[str, int] = {}
+        # Store time of keys no hinted request has used yet.
+        self._stored_at: dict[OffloadKey, float] = {}
         self.hints_received = 0
 
     def _observe(self, keys: Iterable[OffloadKey], hint: ReuseHint | None) -> None:
@@ -61,6 +63,7 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
             owner = self._owner.get(key)
             if owner is None:
                 self._owner[key] = sid
+                self._stored_at.pop(key, None)
             elif owner is not _SHARED and owner != sid:
                 self._owner[key] = _SHARED
 
@@ -70,15 +73,15 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         if owner is _SHARED:
             return -math.inf
         if owner is None:
-            return now + self.default_horizon_s
-        sid = owner
-        if sid in self._final:
+            # Unowned: assume reuse a default horizon after storing, aged
+            # like an overdue hint.
+            t = self._stored_at.get(key, now) + self.default_horizon_s
+        elif owner in self._final:
             return math.inf
-        t = self._deadline.get(sid)
-        if t is None:
+        elif (t := self._deadline.get(owner)) is None:
             # Unhinted: assume reuse a default horizon after last use, and let
             # it age like an overdue hint so idle sessions do not stick.
-            t = self._last_use.get(sid, now) + self.default_horizon_s
+            t = self._last_use.get(owner, now) + self.default_horizon_s
         return t if t >= now else now + (now - t)
 
     @override
@@ -86,7 +89,12 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         self, keys: Iterable[OffloadKey], req_context: ReqContext
     ) -> None:
         keys = list(keys)
-        self._observe(keys, parse_hint(req_context))
+        hint = parse_hint(req_context)
+        if hint is None:
+            now = self._clock()
+            for key in keys:
+                self._stored_at.setdefault(key, now)
+        self._observe(keys, hint)
         super().on_store_miss(keys, req_context)
 
     @override
@@ -124,11 +132,13 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
     def remove(self, key: OffloadKey) -> None:
         super().remove(key)
         self._owner.pop(key, None)
+        self._stored_at.pop(key, None)
 
     @override
     def clear(self) -> None:
         super().clear()
         self._owner.clear()
+        self._stored_at.clear()
         self._deadline.clear()
         self._final.clear()
         self._last_use.clear()
@@ -157,6 +167,7 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
             self._evictable.remove(key)
             del self._ranks[key]
             self._owner.pop(key, None)
+            self._stored_at.pop(key, None)
             evicted.append((key, chunk))
         self._maybe_compact_heap()
         return evicted
