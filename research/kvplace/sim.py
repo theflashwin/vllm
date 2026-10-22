@@ -16,6 +16,20 @@ simulated time. It mirrors the vLLM data path that matters for placement:
   * Restored (warm-up) blocks reach the GPU only when their transfer ends.
   * With `--contend-sec`, prefetch and demand reads share one secondary->CPU
     link, and prefetched blocks land in CPU when their read completes.
+  * Opt-in disk write cost (`write_model`, needs `contend_sec`; default "off"
+    = writes are free, as before). Writes are asynchronous: they never delay
+    the request that produced them, only later disk reads.
+      - "shared": writes and reads share one half-duplex FIFO link
+        (`sec_link_free_at`), so a demand read queues behind earlier writes.
+      - "separate": writes use their own FIFO queue (`sec_write_free_at`);
+        while that queue is busy, reads run at (1 - write_interference) of
+        their bandwidth.
+    Write-through blocks are issued when their prefill ends (arrival + TTFT),
+    write-backs on CPU eviction.
+    Only blocks not already on disk cost a write. A block may leave CPU while
+    its write is in flight; a disk read of it then completes no earlier than
+    the write (no CPU pinning; pessimistic, counted in
+    `sec_read_after_write_blocks`).
 
 Deliberate simplifications (see README): no GPU working-set pinning, cache
 state updates are applied at arrival, GPU<->CPU transfers are uncontended.
@@ -31,7 +45,7 @@ import heapq
 import json
 import math
 import statistics
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 
@@ -54,10 +68,22 @@ class CostModel:
     prefill_tok_per_s: float = 12000.0
     decode_s_per_tok: float = 0.02
     sched_overhead_s: float = 0.005
+    # CPU->secondary write bandwidth, used only by the opt-in write model.
+    # None means "same as sec_cpu_gbps". Latency is sec_cpu_lat_s.
+    sec_write_gbps: float | None = None
 
     @property
     def block_bytes(self) -> int:
         return self.block_tokens * self.kv_bytes_per_token
+
+    @property
+    def write_gbps(self) -> float:
+        return self.sec_cpu_gbps if self.sec_write_gbps is None else self.sec_write_gbps
+
+    def cpu_to_sec_s(self, n: int) -> float:
+        if n == 0:
+            return 0.0
+        return self.sec_cpu_lat_s + n * self.block_bytes / (self.write_gbps * 1e9)
 
     def cpu_to_gpu_s(self, n: int) -> float:
         if n == 0:
@@ -74,6 +100,19 @@ class CostModel:
         with open(path) as f:
             d = json.load(f)
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+def measured_sec_write_gbps(path: str) -> float | None:
+    """Write bandwidth fitted from a microbench JSON's `_fs_rows` (same linear
+    fit microbench uses for reads), or None if it has no write rows."""
+    with open(path) as f:
+        d = json.load(f)
+    rows = [r for r in d.get("_fs_rows", []) if r.get("op") == "write"]
+    if len(rows) < 2:
+        return None
+    fit = statistics.linear_regression([r["n"] for r in rows], [r["s"] for r in rows])
+    block_bytes = d.get("block_tokens", 16) * d.get("kv_bytes_per_token", 57344)
+    return block_bytes / fit.slope / 1e9
 
 
 class LRUTier:
@@ -122,7 +161,10 @@ class ReuseAwareTier(LRUTier):
       * hinted reuse at t, not overdue -> t
       * overdue by d                   -> now + d (long tools tend to run long)
       * no hint                        -> last_use + default_horizon_s,
-                                          aging like an overdue hint
+                                          aging like an overdue hint (a
+                                          session first seen through a store,
+                                          e.g. a hint request's padding
+                                          block, was used at that store)
       * residual table, waited e       -> now + expected remaining after e
                                           (replaces the two rules above)
       * shared blocks                  -> -inf (keep; evicted only via LRU
@@ -183,6 +225,8 @@ class ReuseAwareTier(LRUTier):
     def insert(self, keys: list[BlockKey], now: float) -> list[BlockKey]:
         if self.capacity <= 0:
             return []
+        for sid, _ in keys:
+            self.last_use.setdefault(sid, now)
         new = [k for k in dict.fromkeys(keys) if k not in self.blocks]
         self.touch([k for k in keys if k in self.blocks], now)
         need = len(self.blocks) + len(new) - self.capacity
@@ -296,6 +340,10 @@ class Counters:
     hint_requests: int = 0
     warmup_late: int = 0  # session returned while its warm-up was in flight
     warmup_cancelled: int = 0  # session returned before the warm-up was sent
+    # Write model only: disk-read blocks whose write was still in flight (the
+    # read waits for it), or not yet issued (read proceeds; should be ~0).
+    sec_read_after_write_blocks: int = 0
+    sec_read_unissued_write_blocks: int = 0
 
 
 @dataclass
@@ -304,6 +352,8 @@ class SimResult:
     predictor: str
     records: list[TurnRecord] = field(default_factory=list)
     counters: Counters = field(default_factory=Counters)
+    # Disk link busy time (s): reads, writes; write jobs/blocks; last event.
+    link: dict = field(default_factory=dict)
 
     def summary(self) -> dict:
         resume = [r.ttft_s for r in self.records if r.turn > 0]
@@ -334,6 +384,7 @@ class SimResult:
             "first_ttft_p50": _pct(first, 50),
             **{f"resume_frac_{k}": blocks[k] / total for k in blocks},
             **asdict(self.counters),
+            **self.link,
         }
 
 
@@ -364,6 +415,9 @@ class Simulator:
         sec_blocks: int,
         time_scale: float = 1.0,
         contend_sec: bool = False,
+        default_horizon_s: float = 30.0,
+        write_model: str = "off",
+        write_interference: float = 0.0,
     ):
         self.sessions = {s.session_id: s for s in sessions}
         self.policy = policy
@@ -374,10 +428,26 @@ class Simulator:
         # prefetches, and prefetched blocks land in CPU when their read ends.
         self.contend_sec = contend_sec
         self.sec_link_free_at = 0.0
+        # Opt-in disk write cost (see module docstring).
+        if write_model not in ("off", "shared", "separate"):
+            raise ValueError(f"unknown write_model {write_model!r}")
+        if write_model != "off" and not contend_sec:
+            raise ValueError("write_model needs contend_sec=True")
+        if not 0.0 <= write_interference < 1.0:
+            raise ValueError("write_interference must be in [0, 1)")
+        self.write_model = write_model
+        self.write_interference = write_interference
+        self.sec_write_free_at = 0.0  # "separate": the write queue
+        # block -> completion time of its disk write (inf: not issued yet).
+        self._write_done: dict[BlockKey, float] = {}
+        self._write_fifo: deque[tuple[float, list[BlockKey]]] = deque()
+        self._write_jobs: dict[int, list[BlockKey]] = {}
+        # Reuse-aware tiers score unhinted sessions last_use + this horizon.
+        h = default_horizon_s
         reuse_gpu = policy.gpu_policy == "reuse"
-        self.gpu = ReuseAwareTier(gpu_blocks) if reuse_gpu else LRUTier(gpu_blocks)
+        self.gpu = ReuseAwareTier(gpu_blocks, h) if reuse_gpu else LRUTier(gpu_blocks)
         reuse_cpu = policy.cpu_policy == "reuse"
-        self.cpu = ReuseAwareTier(cpu_blocks) if reuse_cpu else LRUTier(cpu_blocks)
+        self.cpu = ReuseAwareTier(cpu_blocks, h) if reuse_cpu else LRUTier(cpu_blocks)
         self.sec = LRUTier(sec_blocks)
         self.gpu_free_at = 0.0
         self.gaps: dict[str, list[float]] = defaultdict(list)
@@ -390,6 +460,13 @@ class Simulator:
         self._inflight: dict[str, tuple[float, int, list[BlockKey]]] = {}
         self._prefetch_landing: dict[tuple[str, int], tuple[float, list[BlockKey]]] = {}
         self.result = SimResult(policy.name, predictor_name)
+        self.result.link = {
+            "sec_read_busy_s": 0.0,
+            "sec_write_busy_s": 0.0,
+            "sec_write_jobs": 0,
+            "sec_write_blocks": 0,
+            "sim_end_s": 0.0,
+        }
         self._events: list[tuple[float, int, str, str, int]] = []
         self._seq = 0
 
@@ -416,6 +493,9 @@ class Simulator:
                     self._land_prefetch(t, landing[1])
             elif kind == "prefetch":
                 self._prefetch(t, self.sessions[sid], k)
+            elif kind == "sec_write":
+                self._book_sec_write(t, self._write_jobs.pop(k))
+            self.result.link["sim_end_s"] = t
         # Prefetched but never read before the trace ended.
         self.result.counters.prefetch_wasted_blocks += len(self.prefetched)
         return self.result
@@ -430,8 +510,10 @@ class Simulator:
                 self.deferred.discard(k)
                 writeback.append(k)
         if writeback:
+            fresh = self._unwritten(writeback)
             self.sec.insert(writeback, now)
             self.result.counters.cpu_to_sec_writeback_blocks += len(writeback)
+            self._sec_write(now, now, fresh)
 
     def _arrive(self, now: float, s: Session, k: int) -> None:
         c = self.result.counters
@@ -488,7 +570,9 @@ class Simulator:
                 self.prefetched.discard(key)
                 c.prefetch_used_blocks += 1
 
-        load_s = self._secondary_load_s(now, n_sec) + cost.cpu_to_gpu_s(n_cpu + n_sec)
+        load_s = self._secondary_load_s(now, n_sec, sec_keys) + cost.cpu_to_gpu_s(
+            n_cpu + n_sec
+        )
         c.sec_to_cpu_demand_blocks += n_sec
         c.cpu_to_gpu_blocks += n_cpu + n_sec
 
@@ -520,8 +604,11 @@ class Simulator:
             elif mode == "defer":
                 self.deferred.update(k for k in new_keys if k in self.cpu)
             else:
+                fresh = self._unwritten(new_keys)
                 self.sec.insert(new_keys, now)
                 c.cpu_to_sec_write_blocks += len(new_keys)
+                # The KV exists once prefill ends; the write starts then.
+                self._sec_write(now, now + ttft, fresh)
         if not post and hint is not None and hint.final:
             # Earlier deferred blocks of a finished session need no write-back.
             self.deferred.difference_update(keys)
@@ -599,9 +686,9 @@ class Simulator:
             if key in self.prefetched:
                 self.prefetched.discard(key)
                 c.prefetch_used_blocks += 1
-        load_s = self._secondary_load_s(now, len(sec_keys)) + cost.cpu_to_gpu_s(
-            len(sec_keys) + len(cpu_keys)
-        )
+        load_s = self._secondary_load_s(
+            now, len(sec_keys), sec_keys
+        ) + cost.cpu_to_gpu_s(len(sec_keys) + len(cpu_keys))
         prefill_s = (padded_len - n_hit * cost.block_tokens) / cost.prefill_tok_per_s
         start = max(now, self.gpu_free_at)
         self.gpu_free_at = start + prefill_s
@@ -631,8 +718,10 @@ class Simulator:
         new_keys = keys[n_hit:]
         self._note_cpu_evictions(self.cpu.insert(new_keys, now), now)
         if self.sec.capacity > 0:
+            fresh = self._unwritten(new_keys)
             self.sec.insert(new_keys, now)
             c.cpu_to_sec_write_blocks += len(new_keys)
+            self._sec_write(now, finish - cost.decode_s_per_tok, fresh)
         c.sec_to_cpu_demand_blocks += len(sec_keys)
         c.cpu_to_gpu_blocks += len(sec_keys) + len(cpu_keys)
         c.gpu_to_cpu_store_blocks += len(new_keys) if self.cpu.capacity > 0 else 0
@@ -659,12 +748,89 @@ class Simulator:
         if self.policy.prefetch and hint.expected_reuse_s is not None:
             self._schedule_prefetch(now, s, k, hint)
 
-    def _secondary_load_s(self, now: float, blocks: int) -> float:
+    def _secondary_load_s(
+        self, now: float, blocks: int, keys: list[BlockKey] = ()
+    ) -> float:
         if not self.contend_sec or blocks == 0:
             return self.cost.sec_to_cpu_s(blocks)
         start = max(now, self.sec_link_free_at)
-        self.sec_link_free_at = start + self.cost.sec_to_cpu_s(blocks)
+        dur = self.cost.sec_to_cpu_s(blocks)
+        if self.write_model != "off":
+            # A block cannot be read before its write lands. On the shared
+            # FIFO link this already holds; on separate queues, wait for it.
+            start = max(start, self._write_wait(now, keys))
+            if self.write_model == "separate" and self.write_interference > 0:
+                dur = self._interfered(start, dur)
+        self.sec_link_free_at = start + dur
+        self.result.link["sec_read_busy_s"] += dur
         return self.sec_link_free_at - now
+
+    def _interfered(self, start: float, dur: float) -> float:
+        """Read time when reads run at (1 - write_interference) of their
+        bandwidth while the write queue is busy. The queue is busy without gaps
+        from now to sec_write_free_at; writes issued later are ignored."""
+        busy = self.sec_write_free_at - start
+        if busy <= 0:
+            return dur
+        rate = 1.0 - self.write_interference
+        if dur <= rate * busy:
+            return dur / rate
+        return busy + (dur - rate * busy)
+
+    def _write_wait(self, now: float, keys: Iterable[BlockKey]) -> float:
+        """Latest in-flight write completion among `keys` (0 if none)."""
+        c = self.result.counters
+        while self._write_fifo and self._write_fifo[0][0] <= now:
+            done, done_keys = self._write_fifo.popleft()
+            for key in done_keys:
+                if self._write_done.get(key) == done:
+                    del self._write_done[key]
+        wait = 0.0
+        for key in keys:
+            done = self._write_done.get(key)
+            if done is None:
+                continue
+            if done == math.inf:
+                c.sec_read_unissued_write_blocks += 1
+            elif done > now:
+                c.sec_read_after_write_blocks += 1
+                wait = max(wait, done)
+        return wait
+
+    def _unwritten(self, keys: list[BlockKey]) -> list[BlockKey]:
+        """Blocks that would cost a disk write (not already on disk)."""
+        if self.write_model == "off":
+            return []
+        return [key for key in dict.fromkeys(keys) if key not in self.sec]
+
+    def _sec_write(self, now: float, issue_at: float, keys: list[BlockKey]) -> None:
+        """Queue an asynchronous disk write of `keys`, issued at `issue_at`."""
+        if self.write_model == "off" or not keys:
+            return
+        if issue_at <= now:
+            self._book_sec_write(now, keys)
+            return
+        for key in keys:
+            self._write_done[key] = math.inf
+        self._seq += 1
+        self._write_jobs[self._seq] = keys
+        heapq.heappush(self._events, (issue_at, self._seq, "sec_write", "", self._seq))
+
+    def _book_sec_write(self, now: float, keys: list[BlockKey]) -> None:
+        dur = self.cost.cpu_to_sec_s(len(keys))
+        if self.write_model == "shared":
+            start = max(now, self.sec_link_free_at)
+            self.sec_link_free_at = done = start + dur
+        else:
+            start = max(now, self.sec_write_free_at)
+            self.sec_write_free_at = done = start + dur
+        for key in keys:
+            self._write_done[key] = done
+        self._write_fifo.append((done, keys))
+        link = self.result.link
+        link["sec_write_busy_s"] += dur
+        link["sec_write_jobs"] += 1
+        link["sec_write_blocks"] += len(keys)
 
     def _schedule_prefetch(
         self, now: float, s: Session, k: int, hint: ReuseHint
@@ -710,7 +876,7 @@ class Simulator:
             return
         self.result.counters.sec_to_cpu_prefetch_blocks += len(todo)
         if self.contend_sec:
-            done = now + self._secondary_load_s(now, len(todo))
+            done = now + self._secondary_load_s(now, len(todo), todo)
             self._prefetch_landing[s.session_id, k] = (done, todo)
             self._push(done, "prefetch_done", s.session_id, k)
             return
@@ -747,11 +913,28 @@ def main() -> None:
         action="store_true",
         help="prefetch and demand reads share one secondary->CPU link",
     )
+    p.add_argument(
+        "--write-model",
+        choices=["off", "shared", "separate"],
+        default="off",
+        help="disk write cost (needs --contend-sec); see module docstring",
+    )
+    p.add_argument("--write-interference", type=float, default=0.0)
+    p.add_argument(
+        "--sec-write-gbps",
+        type=float,
+        help="write bandwidth (default: fitted from --cost-json, else read BW)",
+    )
     p.add_argument("--out", help="write per-turn records + summaries as JSON")
     args = p.parse_args()
 
     sessions = read_trace(args.trace)
     cost = CostModel.from_json(args.cost_json) if args.cost_json else CostModel()
+    if args.write_model != "off":
+        wbw = args.sec_write_gbps
+        if wbw is None and args.cost_json:
+            wbw = measured_sec_write_gbps(args.cost_json)
+        cost = replace(cost, sec_write_gbps=wbw)
     runs = []
     for pol in args.policies:
         for pred in args.predictors:
@@ -765,6 +948,8 @@ def main() -> None:
                 args.sec_blocks,
                 args.time_scale,
                 args.contend_sec,
+                write_model=args.write_model,
+                write_interference=args.write_interference,
             )
             runs.append(sim.run())
 

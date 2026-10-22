@@ -80,7 +80,7 @@ class PrefetchExperiment(Simulator):
             self.response_at[sid, k] = t
         super()._push(t, kind, sid, k)
 
-    def _secondary_load_s(self, now, blocks):
+    def _secondary_load_s(self, now, blocks, keys=()):  # no write model here
         if not blocks:
             return 0.0
         start = max(now, self.link_free_at)
