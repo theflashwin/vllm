@@ -263,10 +263,28 @@ class ReuseAwareTier(LRUTier):
         self.by_session[k[0]].discard(k[1])
 
 
+def make_tier(
+    kind: str,
+    capacity: int,
+    sessions: dict[str, Session],
+    default_horizon_s: float = 30.0,
+) -> LRUTier:
+    """Tier for a `cpu_policy`/`gpu_policy` name: lru, reuse, or one of the
+    CPU-tier baselines in `kvplace.baselines`. `default_horizon_s` applies to
+    `reuse` only; baseline tiers use their own defaults."""
+    if kind == "lru":
+        return LRUTier(capacity)
+    if kind == "reuse":
+        return ReuseAwareTier(capacity, default_horizon_s)
+    from kvplace import baselines  # imports this module; avoid a cycle
+
+    return baselines.make_tier(kind, capacity, sessions)
+
+
 @dataclass
 class PolicyConfig:
     name: str
-    cpu_policy: str = "lru"  # lru | reuse
+    cpu_policy: str = "lru"  # lru | reuse | see kvplace.baselines.make_tier
     gpu_policy: str = "lru"  # lru | reuse (agent-aware GPU eviction)
     prefetch: bool = False
     # Selective write: never cascade final-turn blocks, and defer cascading
@@ -296,11 +314,16 @@ POLICIES: dict[str, PolicyConfig] = {
 
 
 def get_policy(name: str) -> PolicyConfig:
-    """Named policy, or `warm:<lead_s>` (LRU tiers + timed GPU warm-up)."""
+    """Named policy, `warm:<lead_s>` (LRU tiers + timed GPU warm-up), or a
+    CPU-tier baseline from `kvplace.baselines`."""
     kind, _, arg = name.partition(":")
     if kind == "warm":
         return PolicyConfig(name, "lru", warmup_lead_s=float(arg))
-    return POLICIES[name]
+    if name in POLICIES:
+        return POLICIES[name]
+    from kvplace.baselines import get_baseline_policy
+
+    return get_baseline_policy(name)
 
 
 @dataclass
@@ -444,10 +467,8 @@ class Simulator:
         self._write_jobs: dict[int, list[BlockKey]] = {}
         # Reuse-aware tiers score unhinted sessions last_use + this horizon.
         h = default_horizon_s
-        reuse_gpu = policy.gpu_policy == "reuse"
-        self.gpu = ReuseAwareTier(gpu_blocks, h) if reuse_gpu else LRUTier(gpu_blocks)
-        reuse_cpu = policy.cpu_policy == "reuse"
-        self.cpu = ReuseAwareTier(cpu_blocks, h) if reuse_cpu else LRUTier(cpu_blocks)
+        self.gpu = make_tier(policy.gpu_policy, gpu_blocks, self.sessions, h)
+        self.cpu = make_tier(policy.cpu_policy, cpu_blocks, self.sessions, h)
         self.sec = LRUTier(sec_blocks)
         self.gpu_free_at = 0.0
         self.gaps: dict[str, list[float]] = defaultdict(list)
@@ -534,10 +555,15 @@ class Simulator:
             done, todo = landing
             self._land_prefetch(now, todo)
             warmup_wait_s = max(warmup_wait_s, done - now)
-        if k > 0 and hasattr(self.predictor, "observe"):
+        if k > 0:
             # The previous tool call just completed.
             prev = s.turns[k - 1]
-            self.predictor.observe(prev.tool_name, prev.tool_duration_s)
+            if hasattr(self.predictor, "observe"):
+                self.predictor.observe(prev.tool_name, prev.tool_duration_s)
+            # Tiers that learn the gap distribution online (kvplace.baselines).
+            for tier in (self.gpu, self.cpu):
+                if hasattr(tier, "observe"):
+                    tier.observe(prev.tool_name, prev.tool_duration_s * self.time_scale)
         hint = self._scaled(self.predictor(s, k, self.gaps[s.session_id]))
         # Post-response hints arrive via a hint-only request after the
         # response, so store-time decisions (selective write) can't use them.
