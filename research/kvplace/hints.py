@@ -34,6 +34,9 @@ class ReuseHint:
     # remaining wait once the session has already waited elapsed_s. Lets the
     # cache re-rank sessions as they wait instead of trusting one estimate.
     residual: tuple[tuple[float, float], ...] | None = None
+    # Tool the agent is running until its next request ("human" = waiting on
+    # the user). None means unknown. Optional; older payloads omit it.
+    tool: str | None = None
 
     def to_kv_transfer_params(self) -> dict[str, Any]:
         return {HINT_KEY: asdict(self)}
@@ -58,6 +61,7 @@ def _from_payload(payload: Any) -> ReuseHint | None:
         expected_reuse_s=None if reuse is None else float(reuse),
         final=bool(payload.get("final", False)),
         residual=_residual(payload.get("residual")),
+        tool=None if payload.get("tool") is None else str(payload["tool"]),
     )
 
 
