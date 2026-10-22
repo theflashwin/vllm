@@ -42,6 +42,7 @@ def oracle(session: Session, k: int, gaps: list[float]) -> ReuseHint:
         k,
         None if final else turn.tool_duration_s,
         final,
+        tool=turn.tool_name,
     )
 
 
@@ -56,7 +57,7 @@ def make_noisy_oracle(sigma: float, seed: int = 0) -> Predictor:
         # Stable across processes, unlike hash() on str.
         rng = random.Random(zlib.crc32(f"{seed}:{session.session_id}:{k}".encode()))
         err = math.exp(rng.gauss(0.0, sigma))
-        return ReuseHint(h.session_id, k, h.expected_reuse_s * err, h.final)
+        return replace(h, expected_reuse_s=h.expected_reuse_s * err)
 
     return predict
 
@@ -82,7 +83,15 @@ class ToolMedian:
     With `exact_final`, the session's last turn is flagged final. That uses
     the trace's knowledge of where the session ends: a real agent only knows
     the response called no tool, i.e. it is waiting on the user. Without it,
-    that turn is predicted like any other "human" wait."""
+    that turn is predicted like any other "human" wait.
+
+    With `end_aware` (and no `exact_final`), the last turn of a segment that
+    the converter cut artificially (context compaction, --max-context /
+    --max-turns truncation) is predicted with the tool the trace actually
+    called next (`session.meta["end_next_tool"]`), which a live agent knows
+    once that response finishes. Only genuine session ends, or ends followed
+    by a user message, are predicted as "human" waits. Traces without that
+    metadata fall back to "human" (same as `end_aware=False`)."""
 
     post_response = True
 
@@ -93,8 +102,10 @@ class ToolMedian:
         quantile: float = 0.5,
         exact_final: bool = True,
         human_quantile: float | None = None,
+        end_aware: bool = False,
     ):
         self.min_samples = min_samples
+        self.end_aware = end_aware
         self.quantile = quantile
         self.exact_final = exact_final
         # Waits on the user are heavy-tailed and may be the session's end;
@@ -114,6 +125,8 @@ class ToolMedian:
             if self.exact_final:
                 return ReuseHint(session.session_id, k, None, final=True)
             tool = "human"
+            if self.end_aware:
+                tool = session.meta.get("end_next_tool") or "human"
         h = self.history.get(tool)
         q = self.quantile
         if tool == "human" and self.human_quantile is not None:
@@ -125,7 +138,7 @@ class ToolMedian:
             else:
                 xs = sorted(h)
                 est = xs[min(len(xs) - 1, int(q * len(xs)))]
-        return ReuseHint(session.session_id, k, est)
+        return ReuseHint(session.session_id, k, est, tool=tool)
 
 
 class ToolSessionEWMA(ToolMedian):
@@ -156,7 +169,7 @@ class ToolSessionEWMA(ToolMedian):
                 est = d if est is None else self.alpha * d + (1 - self.alpha) * est
         if est is None:
             return hint
-        return ReuseHint(session.session_id, k, est)
+        return ReuseHint(session.session_id, k, est, tool=hint.tool)
 
 
 class ToolResidual(ToolMedian):
@@ -205,11 +218,21 @@ def get_predictor(name: str) -> Predictor:
     toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback),
     toolres[:<window>] (tool median plus elapsed-aware residual table).
     A `-nf` suffix on tool/toolq/toolsess drops the exact session-end flag;
-    `tool-nfh` also predicts waits on the user with their 90th percentile."""
+    `tool-nfh` also predicts waits on the user with their 90th percentile.
+    `tool-nfh2` is `tool-nfh` that, at a segment's artificial end (compaction
+    or truncation), predicts the tool the trace called next instead of a user
+    wait (see `ToolMedian.end_aware`). Both take `:<window>[:<human quantile>]`,
+    e.g. `tool-nfh2:200:0.75`."""
     kind, _, arg = name.partition(":")
     human_q = None
+    end_aware = False
+    if kind.endswith("-nfh2"):
+        kind, end_aware = kind.removesuffix("2"), True
     if kind.endswith("-nfh"):
         human_q, kind = 0.9, kind.removesuffix("h")
+        arg, _, hq = arg.partition(":")
+        if hq:
+            human_q = float(hq)
     exact_final = not kind.endswith("-nf")
     kind = kind.removesuffix("-nf")
     if kind == "none":
@@ -222,7 +245,10 @@ def get_predictor(name: str) -> Predictor:
         return make_session_ewma(float(arg or 0.5))
     if kind == "tool":
         return ToolMedian(
-            int(arg or 200), exact_final=exact_final, human_quantile=human_q
+            int(arg or 200),
+            exact_final=exact_final,
+            human_quantile=human_q,
+            end_aware=end_aware,
         )
     if kind == "toolres":
         return ToolResidual(
