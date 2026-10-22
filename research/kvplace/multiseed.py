@@ -58,9 +58,12 @@ SETTINGS = {
 
 
 def _job(args: tuple) -> dict:
-    setting, seed, policy, predictor = args
+    """args = (setting, seed, policy, predictor[, write opts for _run])."""
+    setting, seed, policy, predictor, *opts = args
     trace, gpu, cpu, sec, cost_json, _ = SETTINGS[setting]
-    row = _run((trace.format(seed=seed), gpu, cpu, sec, policy, predictor, cost_json))
+    row = _run(
+        (trace.format(seed=seed), gpu, cpu, sec, policy, predictor, cost_json, *opts)
+    )
     return {"setting": setting, "seed": seed, **row}
 
 
@@ -74,12 +77,26 @@ def main() -> None:
     p.add_argument("--settings", nargs="+", default=list(SETTINGS))
     p.add_argument("--predictors", nargs="+", help="override each setting's predictors")
     p.add_argument("--workers", type=int, default=6)
+    p.add_argument(
+        "--write-model", choices=["off", "shared", "separate"], default="off"
+    )
+    p.add_argument("--write-interference", type=float, default=0.0)
     p.add_argument("--out")
     args = p.parse_args()
     preds = {s: args.predictors or SETTINGS[s][5] for s in args.settings}
+    write = (
+        (
+            {
+                "write_model": args.write_model,
+                "write_interference": args.write_interference,
+            },
+        )
+        if args.write_model != "off"
+        else ()
+    )
 
     jobs = [
-        (s, seed, pol, pred)
+        (s, seed, pol, pred, *write)
         for s in args.settings
         for seed in args.seeds
         for pred in preds[s]
