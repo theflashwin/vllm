@@ -21,6 +21,18 @@ Each segment's first-call provider cache hit (`prefix_tokens`) becomes its
 `shared_prefix_tokens`, assuming that content (system prompt, tool
 definitions) is common to all sessions; --no-shared-prefix disables this.
 
+Each session's `meta` records where and why it ends (`end_reason`):
+`session_end` (last row of the raw session), `compaction` (split at a context
+shrink), `max_context` / `max_turns` (truncated). For the artificial ends it
+also records what the trace does next (`end_next_tool`, labeled like a gap's
+tool, and `end_next_gap_s`), which is what a live agent would know when its
+last kept response finished (`tool-nfh2` in kvplace.predictors uses it). The
+turns themselves are unchanged. `meta["user"]` is the TraceLab developer id.
+
+--user-split train|test keeps only one side of a fixed developer-level split
+(`user_side`: sha256 of "<split-seed>:<user>", test if below --test-frac);
+--users-include / --users-exclude filter by explicit developer ids.
+
 Real contexts (30k-200k tokens) exceed small models' windows, so
 --token-scale shrinks every token count and --max-context truncates sessions.
 The trace spans weeks; --rebase-rate replaces session start times with a
@@ -35,6 +47,7 @@ Example:
 
 import argparse
 import gzip
+import hashlib
 import json
 import random
 from collections import defaultdict
@@ -43,6 +56,39 @@ from datetime import datetime
 from kvplace.trace import Session, Turn, write_trace
 
 INPUT_EVENTS = {"tool_result", "user_message"}
+END_REASONS = ("session_end", "compaction", "max_context", "max_turns")
+
+
+def user_side(user: str | None, split_seed: int = 0, test_frac: float = 0.4) -> str:
+    """Fixed developer-level split: "test" if the first 8 bytes of
+    sha256("<seed>:<user>"), as a fraction of 2**64, are below `test_frac`,
+    else "train". Stable across processes/platforms."""
+    digest = hashlib.sha256(f"{split_seed}:{user}".encode()).digest()
+    h = int.from_bytes(digest[:8], "big") / 2**64
+    return "test" if h < test_frac else "train"
+
+
+def filter_users(
+    rows_by_session: dict[str, list[dict]],
+    include: set[str] | None = None,
+    exclude: set[str] | None = None,
+    split: str | None = None,
+    split_seed: int = 0,
+    test_frac: float = 0.4,
+) -> dict[str, list[dict]]:
+    """Keep sessions whose developer (`user` of the session's rows) passes the
+    include/exclude lists and, if `split` is set, falls on that side."""
+    out = {}
+    for sid, rows in rows_by_session.items():
+        user = rows[0].get("user")
+        if include is not None and user not in include:
+            continue
+        if exclude is not None and user in exclude:
+            continue
+        if split is not None and user_side(user, split_seed, test_frac) != split:
+            continue
+        out[sid] = rows
+    return out
 
 
 def _ts(s: str) -> float:
@@ -77,6 +123,7 @@ def load_rows(path: str, provider: str) -> dict[str, list[dict]]:
                     "end": max(times),
                     "human": events[0]["event_type"] == "user_message",
                     "tool": max(tools, key=lambda x: x[0])[1] if tools else None,
+                    "user": d.get("user"),
                 }
             )
     return sessions
@@ -101,6 +148,10 @@ def to_sessions(
         for seg_idx, seg in enumerate(segments):
             turns: list[Turn] = []
             ctx = 0
+            # Why this segment ends, and the raw row that would have followed.
+            end_reason, nxt_row = "session_end", None
+            if seg_idx + 1 < len(segments):
+                end_reason, nxt_row = "compaction", segments[seg_idx + 1][0]
             for i, row in enumerate(seg):
                 if i == 0:
                     new_in = row["in"]
@@ -109,6 +160,10 @@ def to_sessions(
                 new_in = max(1, round(new_in * token_scale))
                 out_tok = max(1, round(row["out"] * token_scale))
                 if ctx + new_in + out_tok > max_context or len(turns) >= max_turns:
+                    end_reason = (
+                        "max_turns" if len(turns) >= max_turns else "max_context"
+                    )
+                    nxt_row = row
                     break
                 ctx += new_in + out_tok
                 if i + 1 < len(seg):
@@ -128,13 +183,24 @@ def to_sessions(
             if shared_prefix:
                 hit = round(seg[0].get("hit", 0) * token_scale)
                 shared = min(hit, turns[0].new_input_tokens)
+            meta = {"source": "tracelab", "end_reason": end_reason}
+            if nxt_row is not None:
+                last = seg[len(turns) - 1]
+                meta["end_next_tool"] = (
+                    "human" if nxt_row["human"] else (nxt_row["tool"] or "none")
+                )
+                meta["end_next_gap_s"] = round(
+                    max(0.0, nxt_row["start"] - last["end"]), 3
+                )
+            if "user" in seg[0]:
+                meta["user"] = seg[0]["user"]
             out.append(
                 Session(
                     session_id=f"{sid}#{seg_idx}",
                     start_s=seg[0]["start"],
                     turns=turns,
                     shared_prefix_tokens=shared,
-                    meta={"source": "tracelab"},
+                    meta=meta,
                 )
             )
     out.sort(key=lambda s: s.start_s)
@@ -164,10 +230,29 @@ def main() -> None:
     )
     p.add_argument("--sessions", type=int, help="keep this many (random sample)")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--users-include", nargs="+", help="keep only these developers")
+    p.add_argument("--users-exclude", nargs="+", help="drop these developers")
+    p.add_argument(
+        "--user-split",
+        choices=["train", "test"],
+        help="keep one side of the developer-level split (see user_side)",
+    )
+    p.add_argument("--split-seed", type=int, default=0)
+    p.add_argument("--test-frac", type=float, default=0.4)
     args = p.parse_args()
 
+    rows = load_rows(args.input, args.provider)
+    if args.users_include or args.users_exclude or args.user_split:
+        rows = filter_users(
+            rows,
+            set(args.users_include) if args.users_include else None,
+            set(args.users_exclude) if args.users_exclude else None,
+            args.user_split,
+            args.split_seed,
+            args.test_frac,
+        )
     sessions = to_sessions(
-        load_rows(args.input, args.provider),
+        rows,
         args.token_scale,
         args.max_context,
         args.max_turns,
