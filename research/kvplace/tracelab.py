@@ -229,6 +229,11 @@ def main() -> None:
         help="replace session starts with Poisson arrivals (sessions/s)",
     )
     p.add_argument("--sessions", type=int, help="keep this many (random sample)")
+    p.add_argument(
+        "--max-gap-s",
+        type=float,
+        help="cap each tool/user wait (live replay cannot wait for days)",
+    )
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--users-include", nargs="+", help="keep only these developers")
     p.add_argument("--users-exclude", nargs="+", help="drop these developers")
@@ -273,6 +278,9 @@ def main() -> None:
             s.start_s = round(s.start_s - t0, 3)
     for i, s in enumerate(sessions):
         s.seed = i
+        if args.max_gap_s is not None:
+            for t in s.turns:
+                t.tool_duration_s = min(t.tool_duration_s, args.max_gap_s)
     write_trace(sessions, args.output)
     n_turns = sum(len(s.turns) for s in sessions)
     print(f"wrote {len(sessions)} sessions, {n_turns} turns to {args.output}")
