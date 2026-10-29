@@ -28,6 +28,7 @@ import random
 import re
 import time
 import zlib
+from dataclasses import replace
 from pathlib import Path
 
 import aiohttp
@@ -70,9 +71,7 @@ async def scrape_metrics(http: aiohttp.ClientSession, url: str) -> dict[str, flo
 def scale_hint(hint: ReuseHint | None, time_scale: float) -> ReuseHint | None:
     if hint is None or hint.expected_reuse_s is None:
         return hint
-    return ReuseHint(
-        hint.session_id, hint.turn, hint.expected_reuse_s * time_scale, hint.final
-    )
+    return replace(hint, expected_reuse_s=hint.expected_reuse_s * time_scale)
 
 
 def hint_padding(session_id: str, k: int, prompt_len: int, block: int) -> list[int]:
