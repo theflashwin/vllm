@@ -202,7 +202,9 @@ async def main_async(args) -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     timeout = aiohttp.ClientTimeout(total=None)
-    connector = aiohttp.TCPConnector(limit=0)
+    # vLLM closes idle keep-alive connections after 5 s; sessions sleep longer
+    # between turns, so reusing a pooled connection can hit a closed socket.
+    connector = aiohttp.TCPConnector(limit=0, force_close=True)
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as http:
         async with http.get(f"{args.url}/v1/models") as r:
             model = args.model or (await r.json())["data"][0]["id"]

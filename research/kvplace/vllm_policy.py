@@ -31,7 +31,8 @@ from vllm.v1.kv_offload.base import OffloadKey, ReqContext
 from vllm.v1.kv_offload.cpu.policies.base import ChunkStatus
 from vllm.v1.kv_offload.cpu.policies.lru import LRUCachePolicy
 
-logger = init_logger(__name__)
+# Under "vllm" so vLLM's log handler prints it.
+logger = init_logger(f"vllm.{__name__}")
 
 _SHARED = object()
 # Set KVPLACE_LOG_HINTS=1 to log every hint the policy receives (use it to
