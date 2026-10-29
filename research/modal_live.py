@@ -30,6 +30,9 @@ VENV = "/opt/kvplace/.venv"
 PY = f"{VENV}/bin/python"
 FS_DIR = "/tmp/kvplace_fs"
 PORT = 8000
+# FileSystemTierManager logs this when O_DIRECT fails and falls back to
+# buffered I/O; disk-tier reads would then mostly hit the page cache.
+BUFFERED_IO_WARNING = "O_DIRECT is not supported"
 
 app = modal.App("kvplace-live")
 hf_cache = modal.Volume.from_name("kvplace-hf-cache", create_if_missing=True)
@@ -134,6 +137,8 @@ def run_live(
             try:
                 wait_healthy(server)
                 hf_cache.commit()
+                if BUFFERED_IO_WARNING in (out / "server.log").read_text():
+                    raise RuntimeError(f"{cfg}: fs tier fell back to buffered I/O")
                 replay = subprocess.run(
                     [PY, "-m", "kvplace.replay", str(trace_path),
                      "--url", f"http://localhost:{PORT}",
