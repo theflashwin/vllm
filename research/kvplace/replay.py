@@ -28,6 +28,7 @@ import random
 import re
 import time
 import zlib
+from dataclasses import replace
 from pathlib import Path
 
 import aiohttp
@@ -70,9 +71,9 @@ async def scrape_metrics(http: aiohttp.ClientSession, url: str) -> dict[str, flo
 def scale_hint(hint: ReuseHint | None, time_scale: float) -> ReuseHint | None:
     if hint is None or hint.expected_reuse_s is None:
         return hint
-    return ReuseHint(
-        hint.session_id, hint.turn, hint.expected_reuse_s * time_scale, hint.final
-    )
+    ts = time_scale
+    residual = hint.residual and tuple((e * ts, r * ts) for e, r in hint.residual)
+    return replace(hint, expected_reuse_s=hint.expected_reuse_s * ts, residual=residual)
 
 
 def hint_padding(session_id: str, k: int, prompt_len: int, block: int) -> list[int]:
@@ -201,7 +202,9 @@ async def main_async(args) -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     timeout = aiohttp.ClientTimeout(total=None)
-    connector = aiohttp.TCPConnector(limit=0)
+    # vLLM closes idle keep-alive connections after 5 s; sessions sleep longer
+    # between turns, so reusing a pooled connection can hit a closed socket.
+    connector = aiohttp.TCPConnector(limit=0, force_close=True)
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as http:
         async with http.get(f"{args.url}/v1/models") as r:
             model = args.model or (await r.json())["data"][0]["id"]
