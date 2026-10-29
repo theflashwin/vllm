@@ -86,6 +86,11 @@ def bench_a100() -> dict:
     return _bench("A100")
 
 
+@app.function(gpu="A10G", **common)
+def bench_a10g() -> dict:
+    return _bench("A10G")
+
+
 @app.function(gpu="H100", **common)
 def bench_h100() -> dict:
     return _bench("H100")
@@ -93,7 +98,12 @@ def bench_h100() -> dict:
 
 @app.local_entrypoint()
 def main(gpu: str = "L4", out: str = ""):
-    fn = {"L4": bench_l4, "A100": bench_a100, "H100": bench_h100}[gpu]
+    fn = {
+        "L4": bench_l4,
+        "A10G": bench_a10g,
+        "A100": bench_a100,
+        "H100": bench_h100,
+    }[gpu]
     costs = fn.remote()
     path = Path(out or Path(__file__).parent / f"costs_{gpu.lower()}.json")
     path.write_text(json.dumps(costs, indent=1))
