@@ -71,7 +71,9 @@ async def scrape_metrics(http: aiohttp.ClientSession, url: str) -> dict[str, flo
 def scale_hint(hint: ReuseHint | None, time_scale: float) -> ReuseHint | None:
     if hint is None or hint.expected_reuse_s is None:
         return hint
-    return replace(hint, expected_reuse_s=hint.expected_reuse_s * time_scale)
+    ts = time_scale
+    residual = hint.residual and tuple((e * ts, r * ts) for e, r in hint.residual)
+    return replace(hint, expected_reuse_s=hint.expected_reuse_s * ts, residual=residual)
 
 
 def hint_padding(session_id: str, k: int, prompt_len: int, block: int) -> list[int]:
