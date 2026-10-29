@@ -441,6 +441,7 @@ class Simulator:
         default_horizon_s: float = 30.0,
         write_model: str = "off",
         write_interference: float = 0.0,
+        gpu_admission: bool = False,
     ):
         self.sessions = {s.session_id: s for s in sessions}
         self.policy = policy
@@ -471,6 +472,12 @@ class Simulator:
         self.cpu = make_tier(policy.cpu_policy, cpu_blocks, self.sessions, h)
         self.sec = LRUTier(sec_blocks)
         self.gpu_free_at = 0.0
+        # Opt-in: a running request holds its whole context in GPU blocks
+        # until it finishes, and starts only when enough blocks are free (as
+        # vLLM's scheduler admits requests). Off, GPU blocks are a cache only.
+        self.gpu_admission = gpu_admission
+        self._running: list[tuple[float, int]] = []  # (finish, blocks held)
+        self._held = 0
         self.gaps: dict[str, list[float]] = defaultdict(list)
         self.prefetched: set[BlockKey] = set()
         self.deferred: set[BlockKey] = set()
@@ -604,11 +611,14 @@ class Simulator:
 
         uncached_tokens = prompt_len - n_hit * cost.block_tokens
         prefill_s = uncached_tokens / cost.prefill_tok_per_s
-        start = max(now, self.gpu_free_at)
+        out_tokens = s.turns[k].output_tokens
+        held = -(-(prompt_len + out_tokens) // cost.block_tokens)
+        start = self._admit(max(now, self.gpu_free_at), held)
         self.gpu_free_at = start + prefill_s
         ttft = cost.sched_overhead_s + (start - now) + load_s + prefill_s
         ttft += warmup_wait_s
-        finish = now + ttft + s.turns[k].output_tokens * cost.decode_s_per_tok
+        finish = now + ttft + out_tokens * cost.decode_s_per_tok
+        self._hold(finish, held)
 
         # Cache updates.
         self.gpu.insert(keys, now)
@@ -681,6 +691,25 @@ class Simulator:
             ):
                 self._schedule_prefetch(finish, s, k, hint)
 
+    def _admit(self, t: float, blocks: int) -> float:
+        """Earliest time >= t when `blocks` GPU blocks are free of running
+        requests (FCFS, like vLLM's waiting queue)."""
+        if not self.gpu_admission:
+            return t
+        blocks = min(blocks, self.gpu.capacity)
+        while True:
+            while self._running and self._running[0][0] <= t:
+                self._held -= heapq.heappop(self._running)[1]
+            if self._held + blocks <= self.gpu.capacity:
+                return t
+            t = self._running[0][0]
+
+    def _hold(self, finish: float, blocks: int) -> None:
+        if self.gpu_admission:
+            blocks = min(blocks, self.gpu.capacity)
+            heapq.heappush(self._running, (finish, blocks))
+            self._held += blocks
+
     def _hint_request(self, now: float, s: Session, k: int) -> None:
         """Model the extra request that delivers a post-response hint and
         restores the session's prefix to GPU (a warm-up)."""
@@ -716,7 +745,7 @@ class Simulator:
             now, len(sec_keys), sec_keys
         ) + cost.cpu_to_gpu_s(len(sec_keys) + len(cpu_keys))
         prefill_s = (padded_len - n_hit * cost.block_tokens) / cost.prefill_tok_per_s
-        start = max(now, self.gpu_free_at)
+        start = self._admit(max(now, self.gpu_free_at), len(keys))
         self.gpu_free_at = start + prefill_s
         finish = (
             now
@@ -726,6 +755,7 @@ class Simulator:
             + prefill_s
             + cost.decode_s_per_tok
         )
+        self._hold(finish, len(keys))
 
         # Restored blocks become GPU-resident when their transfer completes;
         # a resumption that arrives earlier waits only for that transfer.
@@ -951,6 +981,11 @@ def main() -> None:
         type=float,
         help="write bandwidth (default: fitted from --cost-json, else read BW)",
     )
+    p.add_argument(
+        "--gpu-admission",
+        action="store_true",
+        help="running requests hold their context in GPU blocks (vLLM-like)",
+    )
     p.add_argument("--out", help="write per-turn records + summaries as JSON")
     args = p.parse_args()
 
@@ -976,6 +1011,7 @@ def main() -> None:
                 args.contend_sec,
                 write_model=args.write_model,
                 write_interference=args.write_interference,
+                gpu_admission=args.gpu_admission,
             )
             runs.append(sim.run())
 

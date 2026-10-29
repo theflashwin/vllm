@@ -276,3 +276,22 @@ def test_expected_remaining_interpolates_and_extends():
     table = ((0.0, 1.0), (10.0, 21.0))
     assert expected_remaining(table, 5.0) == 11.0
     assert expected_remaining(table, 50.0) == 50.0
+
+
+def test_gpu_admission_queues_requests_that_do_not_fit():
+    """Two sessions arrive together; each context needs most of the GPU, so
+    with admission the second waits for the first to finish decoding."""
+    sessions = [
+        Session(f"s{i}", 0.0, [Turn(1600, 100), Turn(16, 1)], seed=i) for i in range(2)
+    ]
+
+    def first_ttfts(admission):
+        r = Simulator(
+            sessions, POLICIES["lru"], "none", CostModel(), 150, 0, 10**6,
+            gpu_admission=admission,
+        ).run()  # fmt: skip
+        return sorted(x.ttft_s for x in r.records if x.turn == 0)
+
+    fast, slow = first_ttfts(True)
+    assert slow - fast > 100 * CostModel().decode_s_per_tok
+    assert first_ttfts(False)[1] < slow

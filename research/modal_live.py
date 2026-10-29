@@ -36,6 +36,9 @@ BUFFERED_IO_WARNING = "O_DIRECT is not supported"
 
 app = modal.App("kvplace-live")
 hf_cache = modal.Volume.from_name("kvplace-hf-cache", create_if_missing=True)
+# Each config's outputs are also saved here, so `modal run --detach` runs keep
+# their results if the local client exits: modal volume get kvplace-results RUN
+results_vol = modal.Volume.from_name("kvplace-results", create_if_missing=True)
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .uv_pip_install("uv==0.11.8")
@@ -99,7 +102,7 @@ def wait_healthy(server: subprocess.Popen, timeout_s: float = 1800) -> None:
     gpu=GPU,
     cpu=8,
     memory=49152,
-    volumes={"/hf": hf_cache},
+    volumes={"/hf": hf_cache, "/results": results_vol},
     timeout=6 * 3600,
     startup_timeout=600,
     retries=0,
@@ -115,6 +118,7 @@ def run_live(
     cpu_bytes: int,
     max_len: int,
     block_size: int,
+    run: str,
 ) -> dict[str, dict[str, bytes]]:
     trace_path = Path("/tmp/trace.jsonl")
     trace_path.write_text(trace)
@@ -151,6 +155,11 @@ def run_live(
                 server.terminate()
                 server.wait(timeout=120)
         results[cfg] = {p.name: p.read_bytes() for p in out.iterdir()}
+        saved = Path("/results") / run / cfg
+        saved.mkdir(parents=True, exist_ok=True)
+        for name, data in results[cfg].items():
+            (saved / name).write_bytes(data)
+        results_vol.commit()
     return results
 
 
@@ -177,7 +186,7 @@ def main(
         max_len=max_len,
         block_size=block_size,
     )
-    results = run_live.remote(Path(trace).read_text(), **args)
+    results = run_live.remote(Path(trace).read_text(), run=run, **args)
     root.mkdir(parents=True, exist_ok=True)
     meta = {"trace": trace, "gpu": GPU, **args}
     (root / "args.json").write_text(json.dumps(meta, indent=1))
