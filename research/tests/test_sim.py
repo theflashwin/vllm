@@ -3,7 +3,14 @@
 from kvplace.gen_synthetic import DEFAULT_TOOLS, generate
 from kvplace.hints import ReuseHint
 from kvplace.prefetch_experiment import PrefetchConfig, PrefetchExperiment
-from kvplace.sim import POLICIES, CostModel, PolicyConfig, Simulator, get_policy
+from kvplace.sim import (
+    POLICIES,
+    ContextPolicy,
+    CostModel,
+    PolicyConfig,
+    Simulator,
+    get_policy,
+)
 from kvplace.trace import Session, Turn, read_trace, write_trace
 
 
@@ -295,3 +302,148 @@ def test_gpu_admission_queues_requests_that_do_not_fit():
     fast, slow = first_ttfts(True)
     assert slow - fast > 100 * CostModel().decode_s_per_tok
     assert first_ttfts(False)[1] < slow
+
+
+def test_return_probability_conditions_on_time_waited():
+    from kvplace.hints import return_probability
+
+    qs = (0.1, 0.1, 0.1, 0.1, 100.0, 100.0)  # mostly instant, some 100 s
+    assert return_probability(qs, 0.0, 1.0) > 0.6
+    assert return_probability(qs, 5.0, 10.0) == 0.0  # in the slow mode
+    assert return_probability(qs, 5.0, 100.0) == 1.0
+    assert return_probability(qs, 200.0, 10.0) == 0.0  # outlasted them all
+
+
+def test_recency_guard_keeps_a_session_that_just_finished():
+    """Session x just finished a turn and is predicted to wait long; without the
+    guard it goes first, with it the older session y goes instead."""
+    from kvplace.sim import ReuseAwareTier
+
+    def evicted(guard):
+        tier = ReuseAwareTier(capacity=4, recency_guard_s=guard)
+        tier.insert([("y", 0), ("y", 1)], now=0.0)
+        tier.set_hint("y", ReuseHint("y", 0, 50.0), now=0.0)
+        tier.insert([("x", 0), ("x", 1)], now=9.0)
+        tier.set_hint("x", ReuseHint("x", 0, 300.0), now=9.0)
+        return {sid for sid, _ in tier.insert([("n", 0), ("n", 1)], now=10.0)}
+
+    assert evicted(0.0) == {"x"}
+    assert evicted(5.0) == {"y"}
+
+
+def _admission_sim(sessions, gpu, **kw):
+    return Simulator(
+        sessions, POLICIES["lru"], "none", CostModel(), gpu, 0, 10**6,
+        gpu_admission=True, **kw,
+    )  # fmt: skip
+
+
+def test_admission_is_fifo_and_lookup_happens_at_admission():
+    """The third request fits but arrived after one that does not: FIFO holds
+    it back. A session's blocks cached by an earlier finish are seen as hits
+    only when it is admitted."""
+    big = [Turn(1600, 100), Turn(16, 1)]
+    sessions = [
+        Session("a", 0.0, big, seed=0),
+        Session("b", 0.001, big, seed=1),
+        Session("c", 0.002, [Turn(160, 1), Turn(16, 1)], seed=2),
+    ]
+    recs = {
+        r.session_id: r
+        for r in _admission_sim(sessions, 150).run().records
+        if r.turn == 0
+    }
+    assert recs["b"].queue_s > 0
+    assert recs["c"].queue_s >= recs["b"].queue_s - 0.002
+
+
+def test_running_blocks_are_pinned_in_one_memory_pool():
+    """While a's blocks are pinned, b cannot evict them; the cache gets only
+    what running requests leave."""
+    sim = _admission_sim([Session("a", 0.0, [Turn(800, 10), Turn(16, 1)], seed=0)], 60)
+    sim._hold(10.0, [("a", i) for i in range(50)], 5)
+    assert sim.gpu.capacity == 55
+    sim.gpu.insert([("a", i) for i in range(50)], 0.0)
+    sim.gpu.insert([("b", i) for i in range(20)], 0.0)
+    assert all(("a", i) in sim.gpu for i in range(50))
+    assert len(sim.gpu) <= 55
+
+
+def test_small_context_shrink_is_not_compaction():
+    from kvplace.tracelab import to_sessions
+
+    row = lambda k, i, o: {  # noqa: E731
+        "k": k, "in": i, "out": o, "hit": 0, "start": float(k), "end": k + 0.5,
+        "human": False, "tool": "Bash",
+    }  # fmt: skip
+    rows = {
+        "s": [
+            row(0, 1000, 50),
+            row(1, 1000, 50),
+            row(2, 1200, 50),
+            row(3, 100, 5),
+            row(4, 200, 5),
+        ]
+    }
+    out = to_sessions(rows, 1.0, 10**9, 10**9, 2)
+    assert [len(s.turns) for s in out] == [3, 2]
+    assert out[0].prompt_lengths()[2] == 1200  # catches up to the recorded context
+
+
+SCAN = CostModel(
+    prefill_tok_per_s=1e12,
+    decode_s_per_tok=0.01,
+    decode_s_per_ctx_tok=1e-5,
+    sched_overhead_s=0,
+)
+
+
+def _next_arrival(sessions, sid="s0", **kw):
+    records = Simulator(
+        sessions, POLICIES["lru"], "none", SCAN, 10**5, 0, 0, gpu_admission=True, **kw
+    ).run().records  # fmt: skip
+    return next(r for r in records if r.session_id == sid and r.turn == 1)
+
+
+def test_decode_step_grows_with_all_decoding_context():
+    """Decode time follows the total KV read each step, so a concurrent request
+    slows this one until it leaves."""
+    alone = [Session("s0", 0.0, [Turn(1600, 100), Turn(16, 1)])]
+    assert abs(_next_arrival(alone).arrival_s - 100 * 0.026) < 1e-6
+
+    other = Session("s1", 0.0, [Turn(1600, 50)], seed=1)
+    # Together for 50 tokens at 0.042 s, then s0 alone for 50 at 0.026 s.
+    assert abs(_next_arrival(alone + [other]).arrival_s - 3.4) < 1e-6
+
+
+def test_prefill_time_grows_with_the_context_before_it():
+    cost = CostModel(prefill_tok_per_s=1e4, prefill_s_per_tok_per_ctx=1e-9)
+    assert abs(cost.prefill_s(0, 1000) - (0.1 + 0.0005)) < 1e-9
+    assert abs(cost.prefill_s(80_000, 1000) - (0.1 + 0.0805)) < 1e-9
+
+
+def test_context_limit_drops_tokens_and_loses_the_cache():
+    turns = [Turn(1600, 16), Turn(16, 1)]
+    keep = _next_arrival([Session("s0", 0.0, turns)])
+    assert keep.prompt_tokens == 1632 and keep.miss_blocks == 2
+
+    limit = ContextPolicy(limit=1000, keep=0.5)
+    dropped = _next_arrival([Session("s0", 0.0, turns)], context_policy=limit)
+    assert dropped.prompt_tokens == 500 + 16 + 16
+    assert dropped.miss_blocks == 2
+
+
+def test_pressure_limit_waits_for_a_queue():
+    def run_small(wait):
+        sessions = [
+            Session(f"s{i}", 0.0, [Turn(1600, 100), Turn(16, 1)], seed=i)
+            for i in range(2)
+        ]
+        limit = ContextPolicy(limit=1000, pressure_wait_s=wait)
+        return Simulator(
+            sessions, POLICIES["lru"], "none", SCAN, 150, 0, 0,
+            gpu_admission=True, context_policy=limit,
+        ).run().link.get("context_drops", 0)  # fmt: skip
+
+    assert run_small(10**6) == 0
+    assert run_small(0.0) > 0

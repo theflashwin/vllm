@@ -12,7 +12,12 @@ simulated time. It mirrors the vLLM data path that matters for placement:
     the secondary tier (write-through), unless the policy skips the write.
   * Post-response hint requests consume cache, transfer, and prefill capacity
     for every policy in a matched comparison.
-  * Prefill is serialized on one GPU (FIFO); decode does not contend.
+  * Prefill is serialized on one GPU (FIFO). Decode does not contend, unless
+    `decode_s_per_ctx_tok` is set: then each step reads every decoding
+    request's KV, step = decode_s_per_tok + decode_s_per_ctx_tok * total context,
+    and steps that carry a prefill chunk are that much longer, for both
+    (kvplace.decode_scan measures these).
+  * `context_policy` makes sessions drop context before a request runs.
   * Restored (warm-up) blocks reach the GPU only when their transfer ends.
   * With `--contend-sec`, prefetch and demand reads share one secondary->CPU
     link, and prefetched blocks land in CPU when their read completes.
@@ -44,12 +49,13 @@ import argparse
 import heapq
 import json
 import math
+import random
 import statistics
-from collections import OrderedDict, defaultdict, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 
-from kvplace.hints import ReuseHint, expected_remaining
+from kvplace.hints import ReuseHint, expected_remaining, return_probability
 from kvplace.predictors import Predictor, get_predictor, is_post_response
 from kvplace.trace import Session, read_trace
 
@@ -67,6 +73,15 @@ class CostModel:
     sec_cpu_lat_s: float = 200e-6
     prefill_tok_per_s: float = 12000.0
     decode_s_per_tok: float = 0.02
+    # Per decode step, per context token of every decoding request. 0: decode
+    # time is decode_s_per_tok, whatever the load.
+    decode_s_per_ctx_tok: float = 0.0
+    # Prefilling a token also reads the KV before it, so its time is
+    # 1 / prefill_tok_per_s + this * (tokens before it).
+    prefill_s_per_tok_per_ctx: float = 0.0
+    prefill_chunk_tokens: int = 2048  # tokens per engine step while prefilling
+    # API-side cost of a request (parsing, hashing) on top of sched_overhead_s.
+    overhead_s_per_ctx_tok: float = 0.0
     sched_overhead_s: float = 0.005
     # CPU->secondary write bandwidth, used only by the opt-in write model.
     # None means "same as sec_cpu_gbps". Latency is sec_cpu_lat_s.
@@ -79,6 +94,10 @@ class CostModel:
     @property
     def write_gbps(self) -> float:
         return self.sec_cpu_gbps if self.sec_write_gbps is None else self.sec_write_gbps
+
+    def prefill_s(self, cached: int, new: int) -> float:
+        slope = self.prefill_s_per_tok_per_ctx
+        return new / self.prefill_tok_per_s + slope * new * (cached + new / 2)
 
     def cpu_to_sec_s(self, n: int) -> float:
         if n == 0:
@@ -122,6 +141,8 @@ class LRUTier:
     def __init__(self, capacity: int):
         self.capacity = capacity
         self.blocks: OrderedDict[BlockKey, None] = OrderedDict()
+        # Blocks of running requests (GPU admission); never evicted.
+        self.pinned: Counter[BlockKey] | None = None
 
     def __contains__(self, k: BlockKey) -> bool:
         return k in self.blocks
@@ -143,10 +164,25 @@ class LRUTier:
             if k in self.blocks:
                 self.blocks.move_to_end(k)
                 continue
-            if len(self.blocks) >= self.capacity:
-                evicted.append(self.blocks.popitem(last=False)[0])
+            while len(self.blocks) >= self.capacity:
+                victim = self._pop_victim()
+                if victim is None:
+                    return evicted  # everything left is pinned
+                evicted.append(victim)
             self.blocks[k] = None
         return evicted
+
+    def _pop_victim(self) -> BlockKey | None:
+        if not self.pinned:
+            return self.blocks.popitem(last=False)[0] if self.blocks else None
+        # A pinned block counts as recent, and rotating it keeps this amortized.
+        for _ in range(len(self.blocks)):
+            k = next(iter(self.blocks))
+            if k not in self.pinned:
+                del self.blocks[k]
+                return k
+            self.blocks.move_to_end(k)
+        return None
 
     def set_hint(self, session_id: str, hint: ReuseHint | None, now: float) -> None:
         pass
@@ -171,9 +207,24 @@ class ReuseAwareTier(LRUTier):
                                           fallback when nothing else is left)
     """
 
-    def __init__(self, capacity: int, default_horizon_s: float = 30.0):
+    def __init__(
+        self,
+        capacity: int,
+        default_horizon_s: float = 30.0,
+        recency_guard_s: float = 0.0,
+        use_quantiles: bool = False,
+    ):
         super().__init__(capacity)
         self.default_horizon_s = default_horizon_s
+        # Sessions idle less than this are kept, as LRU would: mispredicted
+        # quick returns are the costliest mistakes.
+        self.recency_guard_s = recency_guard_s
+        # Rank hinted sessions by P(return within the tier's residency
+        # horizon), estimated as an EWMA of how long evicted sessions had been
+        # idle, converted to an equivalent return time.
+        self.use_quantiles = use_quantiles
+        self.quantiles: dict[str, tuple[float, ...]] = {}
+        self.horizon_s = 60.0
         self.deadline: dict[str, float] = {}
         self.final: set[str] = set()
         self.last_use: dict[str, float] = {}
@@ -185,9 +236,20 @@ class ReuseAwareTier(LRUTier):
 
     def _score(self, sid: str, now: float) -> float:
         if sid == SHARED:
-            return -math.inf
+            # Kept while in use, aged like any idle session otherwise.
+            t = self.last_use.get(SHARED, now)
+            return t if t >= now else now + (now - t)
         if sid in self.final:
             return math.inf
+        if self.recency_guard_s > 0:
+            # last_use is the finish time, so it is in the future while a
+            # request is in flight; only genuinely idle sessions are guarded.
+            idle = now - self.last_use.get(sid, -math.inf)
+            if 0 <= idle < self.recency_guard_s:
+                return now
+        if self.use_quantiles and (qs := self.quantiles.get(sid)) is not None:
+            p = return_probability(qs, now - self.hinted_at[sid], self.horizon_s)
+            return now + self.horizon_s * (1.0 / max(p, 1e-3) - 1.0)
         if (table := self.residual.get(sid)) is not None:
             return now + expected_remaining(table, now - self.hinted_at[sid])
         t = self.deadline.get(sid)
@@ -205,6 +267,7 @@ class ReuseAwareTier(LRUTier):
         self.last_use[session_id] = now
         self.deadline.pop(session_id, None)
         self.residual.pop(session_id, None)
+        self.quantiles.pop(session_id, None)
         if hint is None:
             return
         if hint.final:
@@ -215,6 +278,9 @@ class ReuseAwareTier(LRUTier):
                 self.deadline[session_id] = now + hint.expected_reuse_s
             if hint.residual is not None:
                 self.residual[session_id] = hint.residual
+                self.hinted_at[session_id] = now
+            if hint.quantiles is not None:
+                self.quantiles[session_id] = hint.quantiles
                 self.hinted_at[session_id] = now
 
     def touch(self, keys: Iterable[BlockKey], now: float) -> None:
@@ -233,6 +299,8 @@ class ReuseAwareTier(LRUTier):
         protect = {k[0] for k in keys}
         evicted = self._evict(need, now, protect) if need > 0 else []
         for k in reversed(new[: self.capacity]):
+            if len(self.blocks) >= self.capacity:
+                break
             self.blocks[k] = None
             self.by_session[k[0]].add(k[1])
         return evicted
@@ -245,7 +313,12 @@ class ReuseAwareTier(LRUTier):
         )
         evicted: list[BlockKey] = []
         for sid in order:
+            idle = now - self.last_use.get(sid, now)
+            if idle > 0:
+                self.horizon_s = 0.95 * self.horizon_s + 0.05 * idle
             idxs = sorted(self.by_session[sid], reverse=True)
+            if self.pinned:
+                idxs = [i for i in idxs if (sid, i) not in self.pinned]
             for i in idxs[: n - len(evicted)]:
                 self._drop((sid, i))
                 evicted.append((sid, i))
@@ -253,7 +326,12 @@ class ReuseAwareTier(LRUTier):
                 return evicted
         # Fall back to LRU over whatever is left (including protected).
         while len(evicted) < n and self.blocks:
-            k = next(iter(self.blocks))
+            k = next(
+                (b for b in self.blocks if not self.pinned or b not in self.pinned),
+                None,
+            )
+            if k is None:
+                break
             self._drop(k)
             evicted.append(k)
         return evicted
@@ -276,6 +354,12 @@ def make_tier(
         return LRUTier(capacity)
     if kind == "reuse":
         return ReuseAwareTier(capacity, default_horizon_s)
+    if kind == "reuse_guard":
+        return ReuseAwareTier(capacity, default_horizon_s, recency_guard_s=5.0)
+    if kind == "reuse_guard_prob":
+        return ReuseAwareTier(
+            capacity, default_horizon_s, recency_guard_s=5.0, use_quantiles=True
+        )
     from kvplace import baselines  # imports this module; avoid a cycle
 
     return baselines.make_tier(kind, capacity, sessions)
@@ -303,6 +387,10 @@ class PolicyConfig:
 POLICIES: dict[str, PolicyConfig] = {
     "lru": PolicyConfig("lru"),
     "reuse_evict": PolicyConfig("reuse_evict", "reuse"),
+    # reuse_evict plus the recency guard, and plus quantile-based ranking
+    # (use with a `toolp` predictor).
+    "reuse_guard": PolicyConfig("reuse_guard", "reuse_guard"),
+    "reuse_guard_prob": PolicyConfig("reuse_guard_prob", "reuse_guard_prob"),
     # Agent-aware GPU<->CPU only (CacheWise/TokenCake-style); CPU->disk is LRU.
     "gpu_aware": PolicyConfig("gpu_aware", "lru", gpu_policy="reuse"),
     # Agent-aware at both boundaries, including demotion to disk.
@@ -411,6 +499,20 @@ class SimResult:
         }
 
 
+@dataclass
+class ContextPolicy:
+    """Make sessions over `limit` tokens drop context before a request runs.
+
+    The session falls to `keep` * `limit` tokens; only the shared prefix stays in
+    the cache, the rest is re-prefilled. With `pressure_wait_s` the limit applies
+    only while the oldest queued request has waited at least that long.
+    """
+
+    limit: int
+    keep: float = 0.5
+    pressure_wait_s: float | None = None
+
+
 def _pct(xs: list[float], p: float) -> float:
     if not xs:
         return 0.0
@@ -420,9 +522,13 @@ def _pct(xs: list[float], p: float) -> float:
 
 def _block_keys(session: Session, n_tokens: int, block_tokens: int) -> list[BlockKey]:
     keys = []
+    # After a context drop the session's blocks are different content.
+    owner = session.session_id
+    if epoch := session.meta.get("context_epoch"):
+        owner = f"{owner}#{epoch}"
     for i in range(n_tokens // block_tokens):
         shared = (i + 1) * block_tokens <= session.shared_prefix_tokens
-        keys.append((SHARED, i) if shared else (session.session_id, i))
+        keys.append((SHARED, i) if shared else (owner, i))
     return keys
 
 
@@ -442,7 +548,16 @@ class Simulator:
         write_model: str = "off",
         write_interference: float = 0.0,
         gpu_admission: bool = False,
+        replicas: int = 1,
+        affinity: float = 1.0,
+        admission_blocks: int | None = None,
+        seed: int = 0,
+        server_hints: bool = False,
+        context_policy: ContextPolicy | None = None,
     ):
+        if context_policy and "lru" not in (policy.gpu_policy, policy.cpu_policy):
+            raise ValueError("context_policy needs LRU tiers (keys change owner)")
+        self.context_policy = context_policy
         self.sessions = {s.session_id: s for s in sessions}
         self.policy = policy
         self.predictor: Predictor = get_predictor(predictor_name)
@@ -468,16 +583,56 @@ class Simulator:
         self._write_jobs: dict[int, list[BlockKey]] = {}
         # Reuse-aware tiers score unhinted sessions last_use + this horizon.
         h = default_horizon_s
-        self.gpu = make_tier(policy.gpu_policy, gpu_blocks, self.sessions, h)
+        # GPU replicas share the CPU and disk tiers. A session's next turn
+        # stays on its replica with probability `affinity`, else goes to a
+        # random one. Each replica has its own cache, queue and admission.
+        self._replicas = [
+            {
+                "gpu": make_tier(policy.gpu_policy, gpu_blocks, self.sessions, h),
+                "free_at": 0.0,
+                "pins": Counter(),
+                "extra": 0,
+                "waiting": deque(),
+                "dec_virtual": 0.0,  # tokens each decoding request has produced
+                "dec_at": 0.0,
+                "dec_ctx": 0,
+                "dec_heap": [],
+                "dec_gen": 0,
+                "dec_prefill_s": 0.0,  # prefill chunk's time in each engine step
+                "dec_prefill_until": 0.0,
+            }
+            for _ in range(replicas)
+        ]
+        self.affinity = affinity
+        # Server-side prediction: the post-response hint is applied when the
+        # response finishes, with no hint-only request (no extra load, no
+        # warm-up of the prefix back to GPU).
+        self.server_hints = server_hints
+        self._replica_of: dict[str, int] = {}
+        self.routing_seed = seed
+        self.gpu = self._replicas[0]["gpu"]
+        self._gpu_blocks = gpu_blocks
         self.cpu = make_tier(policy.cpu_policy, cpu_blocks, self.sessions, h)
         self.sec = LRUTier(sec_blocks)
         self.gpu_free_at = 0.0
-        # Opt-in: a running request holds its whole context in GPU blocks
-        # until it finishes, and starts only when enough blocks are free (as
-        # vLLM's scheduler admits requests). Off, GPU blocks are a cache only.
+        # Opt-in: GPU memory is one pool. A running request pins its context's
+        # blocks (and holds blocks for its output) until it finishes; a FIFO
+        # queue admits the next request when its blocks fit, and the cache
+        # lookup happens at admission, as in vLLM's scheduler. The rest of the
+        # pool caches idle prefixes. Off, GPU blocks are a cache only.
         self.gpu_admission = gpu_admission
-        self._running: list[tuple[float, int]] = []  # (finish, blocks held)
-        self._held = 0
+        # Memory for running requests. A larger value than gpu_blocks models a
+        # squeezed cache (other tenants limit how much may stay cached).
+        self.admission_blocks = admission_blocks or gpu_blocks
+        self._pins: Counter[BlockKey] = self._replicas[0]["pins"]
+        self._extra = 0
+        self._waiting: deque = self._replicas[0]["waiting"]
+        self._holds: dict[int, tuple[int, list[BlockKey], int]] = {}
+        self._next_hold = 0
+        self._r = 0
+        if gpu_admission:
+            for st in self._replicas:
+                st["gpu"].pinned = st["pins"]
         self.gaps: dict[str, list[float]] = defaultdict(list)
         self.prefetched: set[BlockKey] = set()
         self.deferred: set[BlockKey] = set()
@@ -485,7 +640,7 @@ class Simulator:
         self._latest_turn: dict[str, int] = {}
         self._turn: dict[str, int] = {}
         # session -> (completion time, turn, keys) of an in-flight warm-up
-        self._inflight: dict[str, tuple[float, int, list[BlockKey]]] = {}
+        self._inflight: dict[str, tuple[float, int, list[BlockKey], int]] = {}
         self._prefetch_landing: dict[tuple[str, int], tuple[float, list[BlockKey]]] = {}
         self.result = SimResult(policy.name, predictor_name)
         self.result.link = {
@@ -497,6 +652,8 @@ class Simulator:
         }
         self._events: list[tuple[float, int, str, str, int]] = []
         self._seq = 0
+        self._decodes: dict[int, tuple] = {}
+        self._next_decode = 0
 
     def _push(self, t: float, kind: str, sid: str, k: int) -> None:
         self._seq += 1
@@ -507,10 +664,33 @@ class Simulator:
             self._push(s.start_s * self.time_scale, "arrive", s.session_id, 0)
         while self._events:
             t, _, kind, sid, k = heapq.heappop(self._events)
+            if kind == "sec_write":
+                self._book_sec_write(t, self._write_jobs.pop(k))
+                self.result.link["sim_end_s"] = t
+                continue
+            if kind == "release":
+                r = self._release(t, k)
+                self._save_replica(r)
+                self.result.link["sim_end_s"] = t
+                continue
+            if kind == "decode_start":
+                self._decode_start(t, k)
+                self.result.link["sim_end_s"] = t
+                continue
+            if kind == "decode_recalc":
+                self._decode_recalc(t, int(sid))
+                self.result.link["sim_end_s"] = t
+                continue
+            if kind == "decode_tick":
+                self._decode_tick(t, int(sid), k)
+                self.result.link["sim_end_s"] = t
+                continue
+            r = self._use_replica(sid, k, kind == "arrive")
             if kind == "arrive":
-                self._arrive(t, self.sessions[sid], k)
+                self._turn[sid] = k
+                self._submit(t, kind, self.sessions[sid], k)
             elif kind == "hint_request":
-                self._hint_request(t, self.sessions[sid], k)
+                self._submit(t, kind, self.sessions[sid], k)
             elif kind == "restored":
                 self._restored(t, self.sessions[sid], k)
             elif kind == "hint_update":
@@ -521,12 +701,35 @@ class Simulator:
                     self._land_prefetch(t, landing[1])
             elif kind == "prefetch":
                 self._prefetch(t, self.sessions[sid], k)
-            elif kind == "sec_write":
-                self._book_sec_write(t, self._write_jobs.pop(k))
+            self._save_replica(r)
             self.result.link["sim_end_s"] = t
         # Prefetched but never read before the trace ended.
         self.result.counters.prefetch_wasted_blocks += len(self.prefetched)
         return self.result
+
+    def _use_replica(self, sid: str, k: int, routing: bool) -> int:
+        """A turn's replica is a hash of (seed, session, turn), so every
+        policy sees the same routing of the same trace."""
+        n = len(self._replicas)
+        r = self._replica_of.get(sid)
+        if routing:
+            u = random.Random(f"{self.routing_seed}:{sid}:{k}")
+            if r is None or u.random() >= self.affinity:
+                r = u.randrange(n)
+        self._replica_of[sid] = r
+        self._load_replica(r)
+        return r
+
+    def _load_replica(self, r: int) -> None:
+        st = self._replicas[r]
+        self._r = r
+        self.gpu, self.gpu_free_at = st["gpu"], st["free_at"]
+        self._pins, self._extra = st["pins"], st["extra"]
+        self._waiting = st["waiting"]
+
+    def _save_replica(self, r: int) -> None:
+        st = self._replicas[r]
+        st["free_at"], st["extra"] = self.gpu_free_at, self._extra
 
     def _note_cpu_evictions(self, evicted: list[BlockKey], now: float) -> None:
         writeback = []
@@ -543,7 +746,10 @@ class Simulator:
             self.result.counters.cpu_to_sec_writeback_blocks += len(writeback)
             self._sec_write(now, now, fresh)
 
-    def _arrive(self, now: float, s: Session, k: int) -> None:
+    def _arrive(
+        self, now: float, s: Session, k: int, arrived: float | None = None
+    ) -> None:
+        arrived = now if arrived is None else arrived
         c = self.result.counters
         cost = self.cost
         prompt_len = s.prompt_lengths()[k]
@@ -552,11 +758,13 @@ class Simulator:
         # A warm-up transfer still in flight: wait for it to land on GPU.
         warmup_wait_s = 0.0
         if (inflight := self._inflight.pop(s.session_id, None)) is not None:
-            done, _, warm_keys = inflight
-            self.gpu.insert(warm_keys, now)
-            if done > now:
-                warmup_wait_s = done - now
-                c.warmup_late += 1
+            done, _, warm_keys, replica = inflight
+            # A warm-up on another replica does not help this one.
+            if replica == self._r:
+                self.gpu.insert(warm_keys, now)
+                if done > now:
+                    warmup_wait_s = done - now
+                    c.warmup_late += 1
         # The session's own prefetch is still reading: wait for it to land.
         if landing := self._prefetch_landing.pop((s.session_id, k - 1), None):
             done, todo = landing
@@ -610,15 +818,32 @@ class Simulator:
         c.cpu_to_gpu_blocks += n_cpu + n_sec
 
         uncached_tokens = prompt_len - n_hit * cost.block_tokens
-        prefill_s = uncached_tokens / cost.prefill_tok_per_s
+        prefill_s = cost.prefill_s(n_hit * cost.block_tokens, uncached_tokens)
         out_tokens = s.turns[k].output_tokens
-        held = -(-(prompt_len + out_tokens) // cost.block_tokens)
-        start = self._admit(max(now, self.gpu_free_at), held)
+        scan = cost.decode_s_per_ctx_tok > 0
+        if scan:
+            st = self._replicas[self._r]
+            self._decode_advance(st, now)
+            steps = math.ceil(uncached_tokens / cost.prefill_chunk_tokens)
+            prefill_step_s = prefill_s / steps if steps else 0.0
+            prefill_s += steps * self._decode_scan_s(st)
+        start = max(now, self.gpu_free_at)
         self.gpu_free_at = start + prefill_s
-        ttft = cost.sched_overhead_s + (start - now) + load_s + prefill_s
-        ttft += warmup_wait_s
-        finish = now + ttft + out_tokens * cost.decode_s_per_tok
-        self._hold(finish, held)
+        if scan and steps:
+            st["dec_prefill_s"] = prefill_step_s
+            st["dec_prefill_until"] = self.gpu_free_at
+            self._decode_schedule(st, self._r, now)
+            self._push(self.gpu_free_at, "decode_recalc", str(self._r), 0)
+        # `ready`: first token. `now` is admission; `arrived` <= now under GPU
+        # admission, and the wait for memory counts toward TTFT.
+        overhead_s = cost.sched_overhead_s + cost.overhead_s_per_ctx_tok * prompt_len
+        ready = now + overhead_s + (start - now) + load_s + prefill_s
+        ready += warmup_wait_s
+        ttft = ready - arrived
+        finish = ready + out_tokens * cost.decode_s_per_tok
+        hold_id = self._hold(
+            None if scan else finish, *self._request_blocks("arrive", s, k)
+        )
 
         # Cache updates.
         self.gpu.insert(keys, now)
@@ -644,7 +869,7 @@ class Simulator:
                 self.sec.insert(new_keys, now)
                 c.cpu_to_sec_write_blocks += len(new_keys)
                 # The KV exists once prefill ends; the write starts then.
-                self._sec_write(now, now + ttft, fresh)
+                self._sec_write(now, ready, fresh)
         if not post and hint is not None and hint.final:
             # Earlier deferred blocks of a finished session need no write-back.
             self.deferred.difference_update(keys)
@@ -653,7 +878,7 @@ class Simulator:
             TurnRecord(
                 s.session_id,
                 k,
-                now,
+                arrived,
                 ttft,
                 prompt_len,
                 n_gpu,
@@ -663,15 +888,37 @@ class Simulator:
                 (s.prompt_lengths()[k - 1] if k else s.shared_prefix_tokens)
                 // cost.block_tokens,
                 s.turns[k - 1].tool_duration_s * self.time_scale if k else 0.0,
-                queue_s=start - now,
+                queue_s=start - arrived,
                 load_s=load_s,
                 warmup_wait_s=warmup_wait_s,
                 prefill_s=prefill_s,
             )
         )
 
+        if scan:
+            self._next_decode += 1
+            self._decodes[self._next_decode] = (
+                self._r,
+                s,
+                k,
+                hint,
+                post,
+                out_tokens,
+                prompt_len,
+                hold_id,
+            )
+            self._push(ready, "decode_start", "", self._next_decode)
+            return
+        self._after_response(s, k, finish, hint, post)
+
+    def _after_response(
+        self, s: Session, k: int, finish: float, hint: ReuseHint | None, post: bool
+    ) -> None:
         lead = self.policy.warmup_lead_s
-        if lead is not None or (post and hint is not None):
+        if self.server_hints and post and hint is not None and lead is None:
+            self._pending_hints[s.session_id, k] = hint
+            self._push(finish, "hint_update", s.session_id, k)
+        elif lead is not None or (post and hint is not None):
             send_at = finish
             if lead is not None and hint is not None and hint.expected_reuse_s:
                 send_at += max(0.0, hint.expected_reuse_s - lead)
@@ -691,24 +938,159 @@ class Simulator:
             ):
                 self._schedule_prefetch(finish, s, k, hint)
 
-    def _admit(self, t: float, blocks: int) -> float:
-        """Earliest time >= t when `blocks` GPU blocks are free of running
-        requests (FCFS, like vLLM's waiting queue)."""
-        if not self.gpu_admission:
-            return t
-        blocks = min(blocks, self.gpu.capacity)
-        while True:
-            while self._running and self._running[0][0] <= t:
-                self._held -= heapq.heappop(self._running)[1]
-            if self._held + blocks <= self.gpu.capacity:
-                return t
-            t = self._running[0][0]
+    def _request_blocks(
+        self, kind: str, s: Session, k: int
+    ) -> tuple[list[BlockKey], int]:
+        """A request's context blocks, and blocks for its generated output."""
+        bt = self.cost.block_tokens
+        prompt = s.prompt_lengths()[k]
+        keys = _block_keys(s, prompt, bt)
+        if kind == "hint_request":
+            keys.append((f"{s.session_id}:hint", k))
+            return keys, 1
+        total = -(-(prompt + s.turns[k].output_tokens) // bt)
+        return keys, max(0, total - len(keys))
 
-    def _hold(self, finish: float, blocks: int) -> None:
-        if self.gpu_admission:
-            blocks = min(blocks, self.gpu.capacity)
-            heapq.heappush(self._running, (finish, blocks))
-            self._held += blocks
+    def _fits(self, keys: list[BlockKey], extra: int) -> bool:
+        used = len(self._pins) + self._extra
+        if used == 0:  # alone on the GPU: never blocks forever
+            return True
+        new = sum(1 for key in dict.fromkeys(keys) if key not in self._pins)
+        return used + new + extra <= self.admission_blocks
+
+    def _submit(self, now: float, kind: str, s: Session, k: int) -> None:
+        if not self.gpu_admission:
+            self._dispatch(now, kind, s, k, now)
+            return
+        self._waiting.append((kind, s, k, now))
+        self._apply_context_policy(now)
+        self._drain(now)
+
+    def _dispatch(self, now: float, kind: str, s: Session, k: int, arrived: float):
+        if kind == "arrive":
+            self._arrive(now, s, k, arrived)
+        else:
+            self._hint_request(now, s, k)
+
+    def _drain(self, now: float) -> None:
+        """Admit waiting requests in FIFO order while they fit."""
+        while self._waiting:
+            kind, s, k, arrived = self._waiting[0]
+            if not self._fits(*self._request_blocks(kind, s, k)):
+                return
+            self._waiting.popleft()
+            self._dispatch(now, kind, s, k, arrived)
+
+    def _hold(self, finish: float | None, keys: list[BlockKey], extra: int) -> int:
+        """Pin a request's blocks. With no `finish`, the caller pushes the release."""
+        if not self.gpu_admission:
+            return 0
+        self._pins.update(dict.fromkeys(keys, 1))
+        self._extra += extra
+        self._set_cache_capacity()
+        self._next_hold += 1
+        self._holds[self._next_hold] = (self._r, keys, extra)
+        if finish is not None:
+            self._push(finish, "release", "", self._next_hold)
+        return self._next_hold
+
+    def _release(self, now: float, hold_id: int) -> int:
+        r, keys, extra = self._holds.pop(hold_id)
+        self._load_replica(r)
+        self._pins.subtract(dict.fromkeys(keys, 1))
+        for key in dict.fromkeys(keys):
+            if self._pins[key] <= 0:
+                del self._pins[key]
+        self._extra -= extra
+        self._set_cache_capacity()
+        self._apply_context_policy(now)
+        self._drain(now)
+        return r
+
+    def _decode_scan_s(self, st: dict) -> float:
+        return self.cost.decode_s_per_ctx_tok * st["dec_ctx"]
+
+    def _decode_step_s(self, st: dict) -> float:
+        return (
+            self.cost.decode_s_per_tok + self._decode_scan_s(st) + st["dec_prefill_s"]
+        )
+
+    def _decode_recalc(self, now: float, r: int) -> None:
+        st = self._replicas[r]
+        self._decode_advance(st, now)
+        if now >= st["dec_prefill_until"]:
+            st["dec_prefill_s"] = 0.0
+        self._decode_schedule(st, r, now)
+
+    def _decode_advance(self, st: dict, now: float) -> None:
+        if st["dec_heap"]:
+            st["dec_virtual"] += (now - st["dec_at"]) / self._decode_step_s(st)
+        st["dec_at"] = now
+
+    def _decode_schedule(self, st: dict, r: int, now: float) -> None:
+        st["dec_gen"] += 1
+        if st["dec_heap"]:
+            left = max(0.0, st["dec_heap"][0][0] - st["dec_virtual"])
+            at = now + left * self._decode_step_s(st)
+            self._push(at, "decode_tick", str(r), st["dec_gen"])
+
+    def _decode_start(self, now: float, rid: int) -> None:
+        r, _, _, _, _, out_tokens, prompt_len, _ = self._decodes[rid]
+        st = self._replicas[r]
+        self._decode_advance(st, now)
+        heapq.heappush(st["dec_heap"], (st["dec_virtual"] + out_tokens, rid))
+        st["dec_ctx"] += prompt_len
+        self._decode_schedule(st, r, now)
+
+    def _decode_tick(self, now: float, r: int, gen: int) -> None:
+        st = self._replicas[r]
+        if gen != st["dec_gen"]:
+            return
+        self._decode_advance(st, now)
+        heap = st["dec_heap"]
+        # Virtual time reaches millions of tokens, where float steps near 1e-9.
+        while heap and heap[0][0] <= st["dec_virtual"] + 1e-6:
+            _, rid = heapq.heappop(heap)
+            _, s, k, hint, post, _, prompt_len, hold_id = self._decodes.pop(rid)
+            st["dec_ctx"] -= prompt_len
+            self._load_replica(r)
+            if hold_id:
+                self._push(now, "release", "", hold_id)
+            self._after_response(s, k, now, hint, post)
+            self._save_replica(r)
+        self._decode_schedule(st, r, now)
+
+    def _drop_context(self, now: float, s: Session, k: int) -> None:
+        """Apply the context limit to turn k, if it is over."""
+        policy = self.context_policy
+        prompt = s.prompt_lengths()[k]
+        if prompt <= policy.limit:
+            return
+        target = max(s.shared_prefix_tokens, int(policy.keep * policy.limit))
+        s.turns[k].new_input_tokens -= prompt - target
+        s.meta["context_epoch"] = s.meta.get("context_epoch", 0) + 1
+        link = self.result.link
+        link["context_drops"] = link.get("context_drops", 0) + 1
+        link["context_dropped_tokens"] = (
+            link.get("context_dropped_tokens", 0) + prompt - target
+        )
+
+    def _under_pressure(self, now: float) -> bool:
+        wait = self.context_policy.pressure_wait_s
+        if wait is None:
+            return True
+        return bool(self._waiting) and now - self._waiting[0][3] >= wait
+
+    def _apply_context_policy(self, now: float) -> None:
+        if self.context_policy is None or not self._under_pressure(now):
+            return
+        for kind, s, k, _ in self._waiting:
+            if kind == "arrive":
+                self._drop_context(now, s, k)
+
+    def _set_cache_capacity(self) -> None:
+        room = self.admission_blocks - self._extra
+        self.gpu.capacity = max(0, min(self._gpu_blocks, room))
 
     def _hint_request(self, now: float, s: Session, k: int) -> None:
         """Model the extra request that delivers a post-response hint and
@@ -745,7 +1127,7 @@ class Simulator:
             now, len(sec_keys), sec_keys
         ) + cost.cpu_to_gpu_s(len(sec_keys) + len(cpu_keys))
         prefill_s = (padded_len - n_hit * cost.block_tokens) / cost.prefill_tok_per_s
-        start = self._admit(max(now, self.gpu_free_at), len(keys))
+        start = max(now, self.gpu_free_at)
         self.gpu_free_at = start + prefill_s
         finish = (
             now
@@ -755,15 +1137,16 @@ class Simulator:
             + prefill_s
             + cost.decode_s_per_tok
         )
-        self._hold(finish, len(keys))
+        self._hold(finish, *self._request_blocks("hint_request", s, k))
 
         # Restored blocks become GPU-resident when their transfer completes;
         # a resumption that arrives earlier waits only for that transfer.
         if sec_keys or cpu_keys:
             self._inflight[s.session_id] = (
-                now + cost.sched_overhead_s + load_s,
+                start + cost.sched_overhead_s + load_s,
                 k,
                 keys[:n_hit],
+                self._r,
             )
             self.gpu.insert(keys[n_hit:], now)
         else:
@@ -790,7 +1173,8 @@ class Simulator:
         inflight = self._inflight.get(s.session_id)
         if inflight is not None and inflight[1] == k:
             del self._inflight[s.session_id]
-            self.gpu.insert(inflight[2], now)
+            if inflight[3] == self._r:
+                self.gpu.insert(inflight[2], now)
 
     def _hint_update(self, now: float, s: Session, k: int) -> None:
         hint = self._pending_hints.pop((s.session_id, k), None)
@@ -901,8 +1285,12 @@ class Simulator:
             return hint
         ts = self.time_scale
         residual = hint.residual and tuple((e * ts, r * ts) for e, r in hint.residual)
+        quantiles = hint.quantiles and tuple(q * ts for q in hint.quantiles)
         return replace(
-            hint, expected_reuse_s=hint.expected_reuse_s * ts, residual=residual
+            hint,
+            expected_reuse_s=hint.expected_reuse_s * ts,
+            residual=residual,
+            quantiles=quantiles,
         )
 
     def _secondary_write_mode(self, hint: ReuseHint | None) -> str:
