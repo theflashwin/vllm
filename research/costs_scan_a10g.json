@@ -1,0 +1,17 @@
+{
+ "block_tokens": 16,
+ "kv_bytes_per_token": 57344,
+ "gpu_cpu_lat_s": 1.3589946671117847e-05,
+ "gpu_cpu_gbps": 25.263485446953673,
+ "sec_cpu_lat_s": 0.0,
+ "sec_cpu_gbps": 1.4864920451070358,
+ "sched_overhead_s": 0.015,
+ "prefill_tok_per_s": 4672.897196261682,
+ "decode_s_per_tok": 0.0328,
+ "_gpu_type": "A10G",
+ "_model": "Qwen/Qwen2.5-7B-Instruct",
+ "decode_s_per_ctx_tok": 1.11e-07,
+ "prefill_s_per_tok_per_ctx": 7.45e-09,
+ "overhead_s_per_ctx_tok": 2.5e-06,
+ "_scan_source": "results/scan (kvplace.decode_scan), Nov 2026"
+}

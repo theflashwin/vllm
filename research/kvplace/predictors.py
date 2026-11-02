@@ -212,11 +212,32 @@ def is_post_response(predictor: Predictor) -> bool:
     return getattr(predictor, "post_response", False)
 
 
+class ToolProb(ToolMedian):
+    """ToolMedian plus evenly spaced quantiles of the chosen tool's recent
+    waits, so the cache can rank sessions by their chance of returning before
+    it would evict them anyway (see `ReuseAwareTier`)."""
+
+    def __init__(self, *args, n_quantiles: int = 21, **kw):
+        super().__init__(*args, **kw)
+        self.n_quantiles = n_quantiles
+
+    def __call__(self, session: Session, k: int, gaps: list[float]) -> ReuseHint:
+        hint = super().__call__(session, k, gaps)
+        h = self.history.get(hint.tool) if not hint.final else None
+        if not h or len(h) < self.min_samples:
+            return hint
+        xs = sorted(h)
+        n = self.n_quantiles
+        qs = tuple(xs[min(len(xs) - 1, i * len(xs) // (n - 1))] for i in range(n))
+        return replace(hint, quantiles=qs)
+
+
 def get_predictor(name: str) -> Predictor:
     """Names: none, oracle, noisy:<sigma>, ewma[:<alpha>], tool[:<window>],
     toolq:<quantile> (a tool-duration quantile instead of the median),
     toolsess[:<alpha>] (session-local per-tool EWMA, global-median fallback),
-    toolres[:<window>] (tool median plus elapsed-aware residual table).
+    toolres[:<window>] (tool median plus elapsed-aware residual table),
+    toolp (tool median plus wait quantiles; takes the same suffixes as tool).
     A `-nf` suffix on tool/toolq/toolsess drops the exact session-end flag;
     `tool-nfh` also predicts waits on the user with their 90th percentile.
     `tool-nfh2` is `tool-nfh` that, at a segment's artificial end (compaction
@@ -245,6 +266,13 @@ def get_predictor(name: str) -> Predictor:
         return make_session_ewma(float(arg or 0.5))
     if kind == "tool":
         return ToolMedian(
+            int(arg or 200),
+            exact_final=exact_final,
+            human_quantile=human_q,
+            end_aware=end_aware,
+        )
+    if kind == "toolp":
+        return ToolProb(
             int(arg or 200),
             exact_final=exact_final,
             human_quantile=human_q,

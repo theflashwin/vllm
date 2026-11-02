@@ -68,6 +68,10 @@ def kv_config(cfg: str, block_size: int, cpu_bytes: int) -> str | None:
     elif policy == "reuse":
         extra["eviction_policy"] = "ReuseAwareCachePolicy"
         extra["cache_policy_module_path"] = "kvplace.vllm_policy"
+    elif policy == "ilru":
+        # LRU plus promotion-waste counters (kvplace.instrument).
+        extra["eviction_policy"] = "InstrumentedLRU"
+        extra["cache_policy_module_path"] = "kvplace.instrument"
     else:
         raise ValueError(f"unknown config {cfg!r}")
     if tiers == "tier":

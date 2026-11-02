@@ -13,6 +13,7 @@ Two transports carry the same payload:
 This module must stay importable without vLLM (the simulator uses it).
 """
 
+import bisect
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -37,6 +38,9 @@ class ReuseHint:
     # Tool the agent is running until its next request ("human" = waiting on
     # the user). None means unknown. Optional; older payloads omit it.
     tool: str | None = None
+    # Optional evenly spaced quantiles of this tool's recent wait times, so the
+    # cache can estimate the chance the session returns within a horizon.
+    quantiles: tuple[float, ...] | None = None
 
     def to_kv_transfer_params(self) -> dict[str, Any]:
         return {HINT_KEY: asdict(self)}
@@ -62,6 +66,11 @@ def _from_payload(payload: Any) -> ReuseHint | None:
         final=bool(payload.get("final", False)),
         residual=_residual(payload.get("residual")),
         tool=None if payload.get("tool") is None else str(payload["tool"]),
+        quantiles=(
+            tuple(float(x) for x in payload["quantiles"])
+            if payload.get("quantiles")
+            else None
+        ),
     )
 
 
@@ -69,6 +78,21 @@ def _residual(raw: Any) -> tuple[tuple[float, float], ...] | None:
     if not raw:
         return None
     return tuple((float(e), float(r)) for e, r in raw)
+
+
+def return_probability(
+    quantiles: tuple[float, ...], elapsed_s: float, horizon_s: float
+) -> float:
+    """P(wait <= elapsed + horizon | wait > elapsed), from evenly spaced
+    quantiles of the wait distribution. 0 once the wait outlasts them all."""
+
+    def cdf(x: float) -> float:
+        return bisect.bisect_right(quantiles, x) / len(quantiles)
+
+    alive = 1.0 - cdf(elapsed_s)
+    if alive <= 0.0:
+        return 0.0
+    return (cdf(elapsed_s + horizon_s) - cdf(elapsed_s)) / alive
 
 
 def expected_remaining(

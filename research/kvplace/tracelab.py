@@ -136,14 +136,26 @@ def to_sessions(
     max_turns: int,
     min_turns: int,
     shared_prefix: bool = True,
+    compaction_ratio: float = 0.8,
 ) -> list[Session]:
     out = []
+    # What all sessions plausibly share (system prompt, tool definitions): a low
+    # quantile of first-call cache hits. Larger hits are session-specific, such
+    # as a resumed transcript, and must not become one global chain.
+    first_hits = sorted(
+        h
+        for rows in rows_by_session.values()
+        if (h := min(rows, key=lambda r: r["k"]).get("hit", 0)) > 0
+    )
+    shared_cap = first_hits[len(first_hits) // 4] if first_hits else 0
     for sid, rows in rows_by_session.items():
         rows.sort(key=lambda r: r["k"])
         segments: list[list[dict]] = [[]]
         for prev, row in zip([None, *rows], rows):
-            if prev is not None and row["in"] < prev["in"] + prev["out"]:
-                segments.append([])  # context compacted / rewritten
+            # Small shrinks are not compaction: output (e.g. thinking tokens)
+            # is often not carried into the next call's context.
+            if prev is not None and row["in"] < compaction_ratio * prev["in"]:
+                segments.append([])
             segments[-1].append(row)
         for seg_idx, seg in enumerate(segments):
             turns: list[Turn] = []
@@ -153,11 +165,9 @@ def to_sessions(
             if seg_idx + 1 < len(segments):
                 end_reason, nxt_row = "compaction", segments[seg_idx + 1][0]
             for i, row in enumerate(seg):
-                if i == 0:
-                    new_in = row["in"]
-                else:
-                    new_in = row["in"] - seg[i - 1]["in"] - seg[i - 1]["out"]
-                new_in = max(1, round(new_in * token_scale))
+                # Follow the recorded context size, so the simulated one does
+                # not drift when output is not carried forward.
+                new_in = max(1, round(row["in"] * token_scale) - ctx)
                 out_tok = max(1, round(row["out"] * token_scale))
                 if ctx + new_in + out_tok > max_context or len(turns) >= max_turns:
                     end_reason = (
@@ -181,8 +191,8 @@ def to_sessions(
             # shared with earlier sessions (system prompt, tool definitions).
             shared = 0
             if shared_prefix:
-                hit = round(seg[0].get("hit", 0) * token_scale)
-                shared = min(hit, turns[0].new_input_tokens)
+                hit = min(seg[0].get("hit", 0), shared_cap)
+                shared = min(round(hit * token_scale), turns[0].new_input_tokens)
             meta = {"source": "tracelab", "end_reason": end_reason}
             if nxt_row is not None:
                 last = seg[len(turns) - 1]
@@ -209,7 +219,15 @@ def to_sessions(
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("input", help="syfi_coding_trace.jsonl.gz")
+    p.add_argument(
+        "input", help="syfi_coding_trace.jsonl.gz, or a CATraces parsed_traces dir"
+    )
+    p.add_argument(
+        "--format",
+        choices=["tracelab", "catraces"],
+        default="tracelab",
+        help="catraces: CacheWise's parsed traces (see kvplace.catraces)",
+    )
     p.add_argument("-o", "--output", required=True)
     p.add_argument("--provider", choices=["claude", "codex", "all"], default="claude")
     p.add_argument("--token-scale", type=float, default=1.0)
@@ -246,7 +264,12 @@ def main() -> None:
     p.add_argument("--test-frac", type=float, default=0.4)
     args = p.parse_args()
 
-    rows = load_rows(args.input, args.provider)
+    if args.format == "catraces":
+        from kvplace.catraces import load_rows as load_catraces
+
+        rows = load_catraces(args.input)
+    else:
+        rows = load_rows(args.input, args.provider)
     if args.users_include or args.users_exclude or args.user_split:
         rows = filter_users(
             rows,
