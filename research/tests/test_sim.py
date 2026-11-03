@@ -9,6 +9,8 @@ from kvplace.sim import (
     CostModel,
     PolicyConfig,
     Simulator,
+    _block_keys,
+    chain_position,
     get_policy,
 )
 from kvplace.trace import Session, Turn, read_trace, write_trace
@@ -447,3 +449,152 @@ def test_pressure_limit_waits_for_a_queue():
 
     assert run_small(10**6) == 0
     assert run_small(0.0) > 0
+
+
+def test_context_drop_adds_the_turns_to_fetch_it_back():
+    limit = ContextPolicy(limit=1000, keep=0.5, reread_turns=2, reread_tokens=100)
+    session = Session("s0", 0.0, [Turn(1600, 16), Turn(16, 1)])
+    result = Simulator(
+        [session], POLICIES["lru"], "none", SCAN, 10**5, 0, 0,
+        gpu_admission=True, context_policy=limit,
+    ).run()  # fmt: skip
+    assert [r.prompt_tokens for r in result.records] == [500, 616, 816, 932]
+
+
+def test_rereads_that_cross_the_limit_do_not_add_more_rereads():
+    limit = ContextPolicy(limit=1000, keep=0.5, reread_turns=3, reread_tokens=300)
+    session = Session("s0", 0.0, [Turn(1600, 16)])
+    result = Simulator(
+        [session], POLICIES["lru"], "none", SCAN, 10**5, 0, 0,
+        gpu_admission=True, context_policy=limit,
+    ).run()  # fmt: skip
+    assert [r.prompt_tokens for r in result.records] == [500, 816, 500, 900]
+
+
+def _selective(select, turns, **kw):
+    limit = ContextPolicy(1000, 0.5, select=select, min_clear=1, **kw)
+    session = Session("s0", 0.0, turns)
+    result = Simulator(
+        [session], POLICIES["lru"], "none", SCAN, 10**5, 0, 0,
+        gpu_admission=True, context_policy=limit,
+    ).run()  # fmt: skip
+    return [r.prompt_tokens for r in result.records]
+
+
+def _mixed_turns():
+    return [
+        Turn(100, 0, "Read"),
+        Turn(400, 0, "Bash"),
+        Turn(400, 0, "Edit"),
+        Turn(16, 0, "Edit"),
+        Turn(200, 1),
+    ]
+
+
+def test_refetch_clears_only_results_of_rerunnable_tools():
+    prompts = _selective("refetch", _mixed_turns(), keep_recent=1, stub_tokens=0)
+    assert prompts == [100, 500, 900, 916, 716]
+
+
+def test_rolling_clears_any_old_tool_result():
+    prompts = _selective("rolling", _mixed_turns(), keep_recent=1, stub_tokens=0)
+    assert prompts == [100, 500, 900, 916, 300]
+
+
+def test_selective_clear_keeps_cache_before_the_first_cleared_result():
+    session = Session("s0", 0.0, _mixed_turns())
+    limit = ContextPolicy(
+        1000, 0.5, select="rolling", keep_recent=1, stub_tokens=0, min_clear=1
+    )
+    Simulator(
+        [session], POLICIES["lru"], "none", SCAN, 10**5, 0, 0,
+        gpu_admission=True, context_policy=limit,
+    ).run()  # fmt: skip
+    owners = [owner for owner, _ in _block_keys(session, 128, 16)]
+    assert owners == ["s0"] * 6 + ["s0#1"] * 2
+
+
+def _two_sessions_one_human_turn(queue_order):
+    # An agent turn queues before a human turn while a long request holds the GPU.
+    blocker = Session("a", 0.0, [Turn(800, 2000)])
+    agent = Session("b", 1.0, [Turn(500, 1, "Read"), Turn(500, 1)])
+    human = Session("c", 1.0, [Turn(500, 1, "human", 2.0), Turn(500, 1)])
+    return Simulator(
+        [blocker, agent, human], POLICIES["lru"], "none", SCAN, 100, 0, 0,
+        gpu_admission=True, queue_order=queue_order,
+    ).run()  # fmt: skip
+
+
+def test_human_first_queue_admits_every_request():
+    assert len(_two_sessions_one_human_turn("human").records) == 5
+
+
+def test_gated_drop_waits_for_a_long_tool_wait():
+    limit = ContextPolicy(1000, 0.5, gate_wait_s=5.0, gate_cap=3000)
+    turns = [Turn(1600, 0, "Read", 1.0), Turn(100, 0, "Bash", 9.0), Turn(100, 1)]
+    result = Simulator(
+        [Session("s0", 0.0, turns)], POLICIES["lru"], "none", SCAN, 10**5, 0, 0,
+        gpu_admission=True, context_policy=limit,
+    ).run()  # fmt: skip
+    assert [r.prompt_tokens for r in result.records] == [1600, 1700, 500]
+
+
+def _agent_blocking_human(queue_order):
+    agent = Session("a", 0.0, [Turn(16, 1, "Read"), Turn(800, 5000)])
+    human = Session("h", 5.0, [Turn(800, 1)])
+    return Simulator(
+        [agent, human], POLICIES["lru"], "none", SCAN, 60, 10**4, 0,
+        gpu_admission=True, queue_order=queue_order,
+    ).run()  # fmt: skip
+
+
+def test_preemption_lets_a_human_turn_pass_a_decoding_agent_turn():
+    waited = _agent_blocking_human("human")
+    preempted = _agent_blocking_human("human_preempt")
+    assert preempted.link["preemptions"] == 1
+    assert len(preempted.records) == 3
+
+    def ttft(result):
+        return next(r.ttft_s for r in result.records if r.session_id == "h")
+
+    assert ttft(preempted) < ttft(waited) / 10
+
+
+def test_agent_only_limit_skips_human_turns():
+    limit = ContextPolicy(1000, 0.5, agent_only=True)
+    turns = [Turn(1600, 0, "human", 1.0), Turn(100, 0, "Read", 1.0), Turn(100, 1)]
+    result = Simulator(
+        [Session("s0", 0.0, turns)], POLICIES["lru"], "none", SCAN, 10**5, 0, 0,
+        gpu_admission=True, context_policy=limit,
+    ).run()  # fmt: skip
+    assert [r.prompt_tokens for r in result.records] == [1600, 1700, 500]
+
+
+def test_chain_position_counts_from_the_last_human_message():
+    turns = [Turn(1, 1, "Read"), Turn(1, 1, "human"), Turn(1, 1, "Bash"), Turn(1, 1)]
+    session = Session("s0", 0.0, turns)
+    positions = [chain_position(session, k) for k in range(4)]
+    assert positions == [0, 1, 0, 1]
+
+
+def _chain_order(queue_order, **kw):
+    blocker = Session("a", 2.0, [Turn(16, 1, "Read"), Turn(800, 1000)])
+    old = Session(
+        "o", 0.0, [Turn(16, 1, "Read", 1.0), Turn(16, 1, "Read", 2.0), Turn(800, 1)]
+    )
+    new = Session("n", 4.0, [Turn(800, 1)])
+    result = Simulator(
+        [blocker, old, new], POLICIES["lru"], "none", SCAN, 60, 10**4, 0,
+        gpu_admission=True, queue_order=queue_order, **kw,
+    ).run()  # fmt: skip
+    big = [r for r in result.records if r.prompt_tokens >= 800 and r.session_id != "a"]
+    return [r.session_id for r in big]
+
+
+def test_chain_las_serves_the_newer_chain_first_and_sticky_the_older():
+    assert _chain_order("chain_las")[0] == "n"
+    assert _chain_order("chain_sticky")[0] == "o"
+
+
+def test_chain_aging_lets_a_long_waiting_chain_go_first():
+    assert _chain_order("chain_las", chain_aging_s=0.1)[0] == "o"

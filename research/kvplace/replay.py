@@ -35,6 +35,7 @@ import aiohttp
 
 from kvplace.hints import ReuseHint
 from kvplace.predictors import get_predictor, is_post_response
+from kvplace.sim import chain_position
 from kvplace.trace import Session, read_trace
 
 VOCAB_RANGE = (1000, 20000)  # avoid special tokens in common tokenizers
@@ -122,6 +123,8 @@ async def run_session(http, args, model, session, shared, predictor, t0, rows):
         }
         if hint is not None:
             body["kv_transfer_params"] = hint.to_kv_transfer_params()
+        if args.chain_priority:
+            body["priority"] = chain_position(session, k)
         sent = time.time()
         ttft = None
         usage = {}
@@ -211,12 +214,20 @@ async def main_async(args) -> None:
         before = await scrape_metrics(http, args.url)
         rows: list[dict] = []
         t0 = time.time()
-        await asyncio.gather(
-            *(
+        tasks = [
+            asyncio.create_task(
                 run_session(http, args, model, s, shared, predictor, t0, rows)
-                for s in sessions
             )
-        )
+            for s in sessions
+        ]
+        done, pending = await asyncio.wait(tasks, timeout=args.deadline_s)
+        for task in done:
+            task.result()
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        if pending:
+            print(f"deadline: stopped {len(pending)} of {len(tasks)} sessions")
         wall = time.time() - t0
         after = await scrape_metrics(http, args.url)
 
@@ -260,6 +271,12 @@ def main() -> None:
         default=16,
         help="offload block_size (tokens); hint-only requests pad to it",
     )
+    p.add_argument(
+        "--chain-priority",
+        action="store_true",
+        help="set each request's priority to the turns since the last human message",
+    )
+    p.add_argument("--deadline-s", type=float, help="stop and save rows after this")
     p.add_argument("--out", required=True, help="output directory")
     asyncio.run(main_async(p.parse_args()))
 

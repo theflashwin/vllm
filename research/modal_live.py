@@ -104,10 +104,10 @@ def wait_healthy(server: subprocess.Popen, timeout_s: float = 1800) -> None:
 @app.function(
     image=image,
     gpu=GPU,
-    cpu=8,
-    memory=49152,
+    cpu=float(os.environ.get("KVPLACE_CPU", 8)),
+    memory=int(os.environ.get("KVPLACE_MEMORY_MB", 49152)),
     volumes={"/hf": hf_cache, "/results": results_vol},
-    timeout=6 * 3600,
+    timeout=int(os.environ.get("KVPLACE_TIMEOUT_S", 6 * 3600)),
     startup_timeout=600,
     retries=0,
     max_containers=1,
@@ -123,12 +123,15 @@ def run_live(
     max_len: int,
     block_size: int,
     run: str,
+    deadline_s: float,
 ) -> dict[str, dict[str, bytes]]:
     trace_path = Path("/tmp/trace.jsonl")
     trace_path.write_text(trace)
     results = {}
-    for cfg in configs:
-        out = Path("/tmp/out") / cfg
+    for arm in configs:
+        # `tier_lru+chain` serves by priority, set to each turn's chain position.
+        cfg, _, chain = arm.partition("+")
+        out = Path("/tmp/out") / arm
         out.mkdir(parents=True, exist_ok=True)
         subprocess.run(["rm", "-rf", FS_DIR], check=True)
         Path(FS_DIR).mkdir(parents=True)
@@ -138,6 +141,8 @@ def run_live(
             "--num-gpu-blocks-override", str(gpu_blocks),
             "--enable-prompt-tokens-details",
         ]  # fmt: skip
+        if chain:
+            cmd += ["--scheduling-policy", "priority"]
         if (kv := kv_config(cfg, block_size, cpu_bytes)) is not None:
             cmd += ["--kv-transfer-config", kv]
         with open(out / "server.log", "w") as log:
@@ -151,17 +156,19 @@ def run_live(
                     [PY, "-m", "kvplace.replay", str(trace_path),
                      "--url", f"http://localhost:{PORT}",
                      "--predictor", predictor, "--time-scale", str(time_scale),
-                     "--block-size", str(block_size), "--out", str(out)],
+                     "--block-size", str(block_size), "--out", str(out),
+                     *(["--deadline-s", str(deadline_s)] if deadline_s else []),
+                     *(["--chain-priority"] if chain else [])],
                     capture_output=True, text=True,
                 )  # fmt: skip
                 (out / "summary.txt").write_text(replay.stdout + replay.stderr)
             finally:
                 server.terminate()
                 server.wait(timeout=120)
-        results[cfg] = {p.name: p.read_bytes() for p in out.iterdir()}
-        saved = Path("/results") / run / cfg
+        results[arm] = {p.name: p.read_bytes() for p in out.iterdir()}
+        saved = Path("/results") / run / arm
         saved.mkdir(parents=True, exist_ok=True)
-        for name, data in results[cfg].items():
+        for name, data in results[arm].items():
             (saved / name).write_bytes(data)
         results_vol.commit()
     return results
@@ -178,6 +185,7 @@ def main(
     max_len: int = 32768,
     block_size: int = 16,
     run: str = "",
+    deadline_s: float = 0.0,
 ):
     run = run or f"{Path(trace).stem}_{datetime.now():%Y%m%d_%H%M%S}"
     root = Path(__file__).parent / "results" / "live" / run
@@ -189,6 +197,7 @@ def main(
         cpu_bytes=int(cpu_gb * 1e9),
         max_len=max_len,
         block_size=block_size,
+        deadline_s=deadline_s,
     )
     results = run_live.remote(Path(trace).read_text(), run=run, **args)
     root.mkdir(parents=True, exist_ok=True)
