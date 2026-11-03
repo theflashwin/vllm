@@ -23,6 +23,8 @@ class Turn:
     # Tool executed after this turn completes; None on the final turn.
     tool_name: str | None = None
     tool_duration_s: float = 0.0
+    # Tool whose result new_input_tokens holds; set by the simulator's context policy.
+    result_of: str | None = None
 
 
 @dataclass

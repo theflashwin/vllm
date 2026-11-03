@@ -57,8 +57,10 @@ from dataclasses import asdict, dataclass, field, replace
 
 from kvplace.hints import ReuseHint, expected_remaining, return_probability
 from kvplace.predictors import Predictor, get_predictor, is_post_response
-from kvplace.trace import Session, read_trace
+from kvplace.tool_context import NOT_TOOLS, REFETCHABLE
+from kvplace.trace import Session, Turn, read_trace
 
+REREAD_TOOL = "(reread)"  # marks turns a context drop added
 BlockKey = tuple[str, int]  # (session_id or "shared", block index)
 SHARED = "shared"
 
@@ -503,14 +505,36 @@ class SimResult:
 class ContextPolicy:
     """Make sessions over `limit` tokens drop context before a request runs.
 
-    The session falls to `keep` * `limit` tokens; only the shared prefix stays in
-    the cache, the rest is re-prefilled. With `pressure_wait_s` the limit applies
-    only while the oldest queued request has waited at least that long.
+    `select` chooses what goes:
+        truncate      the session falls to `keep` * `limit` tokens, and only the
+                      shared prefix stays cached
+        rolling       every tool result older than `keep_recent` turns
+        refetch       the same, only results of tools that can be run again
+        refetch_tail  refetch, newest first, stopping at `keep` * `limit` tokens
+    The selective modes leave a stub, wait for `min_clear` clearable tokens, and keep
+    the cache up to the first result they clear. With `pressure_wait_s` the limit
+    applies only while the oldest queued request has waited at least that long.
     """
 
     limit: int
     keep: float = 0.5
     pressure_wait_s: float | None = None
+    # Extra turns after each drop, for the agent to fetch back what it needs.
+    reread_turns: int = 0
+    reread_tokens: int = 2000
+    # Extra turns in proportion to the tokens dropped, as a fraction fetched back.
+    reread_frac: float = 0.0
+    select: str = "truncate"
+    keep_recent: int = 12
+    stub_tokens: int = 20
+    min_clear: int = 4000
+    # Diagnostic bound: pretend the edit leaves every cached block valid.
+    free_edit: bool = False
+    # Wait for a tool wait this long, when the cache may be cold, unless over the cap.
+    gate_wait_s: float | None = None
+    gate_cap: int = 0
+    # Leave turns that follow a human message or start a session alone.
+    agent_only: bool = False
 
 
 def _pct(xs: list[float], p: float) -> float:
@@ -520,13 +544,28 @@ def _pct(xs: list[float], p: float) -> float:
     return xs[min(len(xs) - 1, int(round(p / 100 * (len(xs) - 1))))]
 
 
+def is_human_turn(s: Session, k: int) -> bool:
+    return k == 0 or s.turns[k - 1].tool_name == "human"
+
+
+def chain_position(s: Session, k: int) -> int:
+    """Turns since this turn's chain began at a human message or session start."""
+    start = k
+    while not is_human_turn(s, start):
+        start -= 1
+    return k - start
+
+
 def _block_keys(session: Session, n_tokens: int, block_tokens: int) -> list[BlockKey]:
     keys = []
-    # After a context drop the session's blocks are different content.
+    # After a context edit the session's later blocks are different content.
     owner = session.session_id
-    if epoch := session.meta.get("context_epoch"):
-        owner = f"{owner}#{epoch}"
+    edits = session.meta.get("context_edits", ())
+    next_edit = 0
     for i in range(n_tokens // block_tokens):
+        while next_edit < len(edits) and (i + 1) * block_tokens > edits[next_edit][0]:
+            owner = f"{session.session_id}#{edits[next_edit][1]}"
+            next_edit += 1
         shared = (i + 1) * block_tokens <= session.shared_prefix_tokens
         keys.append((SHARED, i) if shared else (owner, i))
     return keys
@@ -554,10 +593,22 @@ class Simulator:
         seed: int = 0,
         server_hints: bool = False,
         context_policy: ContextPolicy | None = None,
+        queue_order: str = "fifo",
+        chain_aging_s: float | None = None,
     ):
+        # "memtime": oracle shortest memory x output first, with backfilling.
+        self.queue_order = queue_order
+        self.chain_aging_s = chain_aging_s
+        self.finish_at: dict[tuple[str, int], float] = {}
+        self._preempted: dict[tuple[str, int], int] = {}
+        self._arrived_of: dict[int, float] = {}
         if context_policy and "lru" not in (policy.gpu_policy, policy.cpu_policy):
             raise ValueError("context_policy needs LRU tiers (keys change owner)")
         self.context_policy = context_policy
+        if context_policy:
+            for s in sessions:
+                for before, turn in zip(s.turns, s.turns[1:]):
+                    turn.result_of = before.tool_name
         self.sessions = {s.session_id: s for s in sessions}
         self.policy = policy
         self.predictor: Predictor = get_predictor(predictor_name)
@@ -897,6 +948,7 @@ class Simulator:
 
         if scan:
             self._next_decode += 1
+            self._arrived_of[self._next_decode] = arrived
             self._decodes[self._next_decode] = (
                 self._r,
                 s,
@@ -969,17 +1021,143 @@ class Simulator:
     def _dispatch(self, now: float, kind: str, s: Session, k: int, arrived: float):
         if kind == "arrive":
             self._arrive(now, s, k, arrived)
+        elif kind == "resume":
+            self._resume(now, s, k)
         else:
             self._hint_request(now, s, k)
 
     def _drain(self, now: float) -> None:
         """Admit waiting requests in FIFO order while they fit."""
+        if self.queue_order == "memtime":
+            self._drain_memtime(now)
+            return
+        if self.queue_order in ("chain_las", "chain_sticky", "session_las"):
+            self._drain_chains(now)
+            return
+        if self.queue_order in ("human", "human_preempt"):
+            self._drain_human_first(now)
+            return
         while self._waiting:
             kind, s, k, arrived = self._waiting[0]
             if not self._fits(*self._request_blocks(kind, s, k)):
                 return
             self._waiting.popleft()
             self._dispatch(now, kind, s, k, arrived)
+
+    def _drain_memtime(self, now: float) -> None:
+        def memory_time(item: tuple) -> int:
+            _, s, k, _ = item
+            return s.prompt_lengths()[k] * max(1, s.turns[k].output_tokens)
+
+        for item in sorted(self._waiting, key=memory_time):
+            kind, s, k, arrived = item
+            if self._fits(*self._request_blocks(kind, s, k)):
+                self._waiting.remove(item)
+                self._dispatch(now, kind, s, k, arrived)
+
+    def _drain_human_first(self, now: float) -> None:
+        preempt = self.queue_order == "human_preempt"
+        for human in (True, False):
+            items = [i for i in self._waiting if self._is_human_item(i) == human]
+            for item in sorted(items, key=lambda i: i[3]):
+                kind, s, k, arrived = item
+                blocks = self._request_blocks(kind, s, k)
+                if not self._fits(*blocks) and human and preempt:
+                    self._preempt_for(now, *blocks)
+                if not self._fits(*blocks):
+                    return
+                self._waiting.remove(item)
+                self._dispatch(now, kind, s, k, arrived)
+
+    def _drain_chains(self, now: float) -> None:
+        """Admit by turns served so far: per chain or session, fewest or most first."""
+
+        def key(item: tuple) -> tuple:
+            _, s, k, arrived = item
+            if self.queue_order == "session_las":
+                return k, arrived
+            sign = 1 if self.queue_order == "chain_las" else -1
+            position = sign * chain_position(s, k)
+            if self.chain_aging_s:
+                position -= (now - arrived) / self.chain_aging_s
+            return position, arrived
+
+        for item in sorted(self._waiting, key=key):
+            kind, s, k, arrived = item
+            if not self._fits(*self._request_blocks(kind, s, k)):
+                return
+            self._waiting.remove(item)
+            self._dispatch(now, kind, s, k, arrived)
+
+    @staticmethod
+    def _is_human_item(item: tuple) -> bool:
+        return item[0] != "resume" and is_human_turn(item[1], item[2])
+
+    def _preempt_for(self, now: float, keys: list[BlockKey], extra: int) -> None:
+        """Pause the newest decoding agent turns if that frees enough for a request.
+
+        Paused requests rejoin the queue and reload whatever the tiers still hold.
+        """
+        st = self._replicas[self._r]
+        new = sum(1 for key in dict.fromkeys(keys) if key not in self._pins)
+        need = len(self._pins) + self._extra + new + extra - self.admission_blocks
+        victims = []
+        for entry in sorted(st["dec_heap"], key=lambda e: -e[1]):
+            if need <= 0:
+                break
+            _, s, k, _, _, _, _, hold_id = self._decodes[entry[1]]
+            if not is_human_turn(s, k):
+                victims.append(entry)
+                need -= len(self._holds[hold_id][1]) + self._holds[hold_id][2]
+        if need > 0:
+            return
+        self._decode_advance(st, now)
+        for entry in victims:
+            target, rid = entry
+            st["dec_heap"].remove(entry)
+            r, s, k, hint, post, _, prompt_len, hold_id = self._decodes[rid]
+            left = max(1e-3, target - st["dec_virtual"])
+            self._decodes[rid] = (r, s, k, hint, post, left, prompt_len, 0)
+            st["dec_ctx"] -= prompt_len
+            self._unpin(hold_id)
+            self._preempted[s.session_id, k] = rid
+            self._waiting.append(("resume", s, k, self._arrived_of[rid]))
+        heapq.heapify(st["dec_heap"])
+        self._decode_schedule(st, self._r, now)
+        link = self.result.link
+        link["preemptions"] = link.get("preemptions", 0) + len(victims)
+
+    def _resume(self, now: float, s: Session, k: int) -> None:
+        rid = self._preempted.pop((s.session_id, k))
+        r, s, k, hint, post, left, prompt_len, _ = self._decodes[rid]
+        cost = self.cost
+        keys = _block_keys(s, prompt_len, cost.block_tokens)
+        n_hit = n_slow = 0
+        for key in keys:
+            if key not in self.gpu:
+                if key not in self.cpu and key not in self.sec:
+                    break
+                n_slow += 1
+            n_hit += 1
+        uncached = prompt_len - n_hit * cost.block_tokens
+        prefill_s = cost.prefill_s(n_hit * cost.block_tokens, uncached)
+        st = self._replicas[self._r]
+        self._decode_advance(st, now)
+        steps = math.ceil(uncached / cost.prefill_chunk_tokens)
+        prefill_step_s = prefill_s / steps if steps else 0.0
+        prefill_s += steps * self._decode_scan_s(st)
+        start = max(now, self.gpu_free_at)
+        self.gpu_free_at = start + prefill_s
+        if steps:
+            st["dec_prefill_s"] = prefill_step_s
+            st["dec_prefill_until"] = self.gpu_free_at
+            self._decode_schedule(st, self._r, now)
+            self._push(self.gpu_free_at, "decode_recalc", str(self._r), 0)
+        hold_id = self._hold(None, *self._request_blocks("resume", s, k))
+        self.gpu.insert(keys, now)
+        self._decodes[rid] = (r, s, k, hint, post, left, prompt_len, hold_id)
+        ready = self.gpu_free_at + cost.cpu_to_gpu_s(n_slow)
+        self._push(ready, "decode_start", "", rid)
 
     def _hold(self, finish: float | None, keys: list[BlockKey], extra: int) -> int:
         """Pin a request's blocks. With no `finish`, the caller pushes the release."""
@@ -995,17 +1173,21 @@ class Simulator:
         return self._next_hold
 
     def _release(self, now: float, hold_id: int) -> int:
-        r, keys, extra = self._holds.pop(hold_id)
+        r = self._holds[hold_id][0]
         self._load_replica(r)
+        self._unpin(hold_id)
+        self._apply_context_policy(now)
+        self._drain(now)
+        return r
+
+    def _unpin(self, hold_id: int) -> None:
+        _, keys, extra = self._holds.pop(hold_id)
         self._pins.subtract(dict.fromkeys(keys, 1))
         for key in dict.fromkeys(keys):
             if self._pins[key] <= 0:
                 del self._pins[key]
         self._extra -= extra
         self._set_cache_capacity()
-        self._apply_context_policy(now)
-        self._drain(now)
-        return r
 
     def _decode_scan_s(self, st: dict) -> float:
         return self.cost.decode_s_per_ctx_tok * st["dec_ctx"]
@@ -1052,6 +1234,7 @@ class Simulator:
         while heap and heap[0][0] <= st["dec_virtual"] + 1e-6:
             _, rid = heapq.heappop(heap)
             _, s, k, hint, post, _, prompt_len, hold_id = self._decodes.pop(rid)
+            self.finish_at[s.session_id, k] = now
             st["dec_ctx"] -= prompt_len
             self._load_replica(r)
             if hold_id:
@@ -1060,20 +1243,84 @@ class Simulator:
             self._save_replica(r)
         self._decode_schedule(st, r, now)
 
+    def _clearable(self, s: Session, k: int) -> list[int]:
+        """Turns before k whose tool results the policy's `select` may clear."""
+        policy = self.context_policy
+        allowed = (REFETCHABLE | {REREAD_TOOL}) if "refetch" in policy.select else None
+        return [
+            j
+            for j in range(1, k - policy.keep_recent + 1)
+            if s.turns[j].new_input_tokens > policy.stub_tokens
+            and s.turns[j].result_of not in NOT_TOOLS
+            and s.turns[j].result_of is not None
+            and (allowed is None or s.turns[j].result_of in allowed)
+        ]
+
+    def _clear_results(self, s: Session, k: int, excess: int) -> tuple[int, int, int]:
+        """Stub out tool results; returns (tokens removed, refetchable, boundary)."""
+        policy = self.context_policy
+        turns = self._clearable(s, k)
+        if policy.select.endswith("_tail"):
+            chosen, total = [], 0
+            for j in reversed(turns):
+                if total >= excess:
+                    break
+                chosen.append(j)
+                total += s.turns[j].new_input_tokens - policy.stub_tokens
+            turns = sorted(chosen)
+        size = [s.turns[j].new_input_tokens - policy.stub_tokens for j in turns]
+        removed = sum(size)
+        if removed < policy.min_clear:
+            return 0, 0, 0
+        lengths = s.prompt_lengths()
+        first = turns[0]
+        boundary = lengths[first] - s.turns[first].new_input_tokens + policy.stub_tokens
+        refetch = 0
+        for j, tokens in zip(turns, size):
+            refetch += tokens if s.turns[j].result_of in REFETCHABLE else 0
+            s.turns[j].new_input_tokens = policy.stub_tokens
+        return removed, refetch, boundary
+
+    def _truncate(self, s: Session, k: int, excess: int) -> tuple[int, int, int]:
+        size = [max(0, t.new_input_tokens) for t in s.turns[: k + 1]]
+        total = sum(size) or 1
+        refetch = sum(
+            tokens for tokens, t in zip(size, s.turns) if t.result_of in REFETCHABLE
+        )
+        s.turns[k].new_input_tokens -= excess
+        return excess, int(excess * refetch / total), s.shared_prefix_tokens
+
     def _drop_context(self, now: float, s: Session, k: int) -> None:
         """Apply the context limit to turn k, if it is over."""
         policy = self.context_policy
         prompt = s.prompt_lengths()[k]
         if prompt <= policy.limit:
             return
+        if (
+            policy.gate_wait_s is not None
+            and prompt <= policy.gate_cap
+            and (k == 0 or s.turns[k - 1].tool_duration_s < policy.gate_wait_s)
+        ):
+            return
         target = max(s.shared_prefix_tokens, int(policy.keep * policy.limit))
-        s.turns[k].new_input_tokens -= prompt - target
-        s.meta["context_epoch"] = s.meta.get("context_epoch", 0) + 1
+        drop = self._truncate if policy.select == "truncate" else self._clear_results
+        removed, refetch, boundary = drop(s, k, prompt - target)
+        if not removed:
+            return
+        epoch = s.meta["context_epoch"] = s.meta.get("context_epoch", 0) + 1
+        if not policy.free_edit:
+            edits = [e for e in s.meta.get("context_edits", ()) if e[0] < boundary]
+            s.meta["context_edits"] = [*edits, (boundary, epoch)]
+        if s.turns[k].tool_name != REREAD_TOOL:
+            count = policy.reread_turns + math.ceil(
+                policy.reread_frac * removed / policy.reread_tokens
+            )
+            extra = Turn(policy.reread_tokens, 100, REREAD_TOOL, 0.1, REREAD_TOOL)
+            s.turns[k + 1 : k + 1] = [replace(extra) for _ in range(count)]
         link = self.result.link
         link["context_drops"] = link.get("context_drops", 0) + 1
-        link["context_dropped_tokens"] = (
-            link.get("context_dropped_tokens", 0) + prompt - target
-        )
+        link["context_dropped_tokens"] = link.get("context_dropped_tokens", 0) + removed
+        link["dropped_refetch_tokens"] = link.get("dropped_refetch_tokens", 0) + refetch
 
     def _under_pressure(self, now: float) -> bool:
         wait = self.context_policy.pressure_wait_s
@@ -1085,7 +1332,9 @@ class Simulator:
         if self.context_policy is None or not self._under_pressure(now):
             return
         for kind, s, k, _ in self._waiting:
-            if kind == "arrive":
+            if kind == "arrive" and not (
+                self.context_policy.agent_only and is_human_turn(s, k)
+            ):
                 self._drop_context(now, s, k)
 
     def _set_cache_capacity(self) -> None:
