@@ -214,9 +214,49 @@ run.
   171 s. Mean chain time rises from 134 s to 157 s, unlike heavier simulated overload.
 - Tokens hit in GPU rise 19% (5.59M to 6.66M) and those from CPU or disk fall 13% (8.45M
   to 7.38M), in line with the simulator's 13-19% drop in reloads.
-- Overload here is mild, so the 20x simulated at 0.0125 sessions/s is not tested. Per
-  session, aging and full-length contexts were not run live. Preemption count not
-  captured.
+- Overload here is mild, so the 20x simulated at 0.0125 sessions/s is not tested. Aging
+  and full-length contexts were not run live. Preemption count not captured.
+
+Per-session arm (`results/live/session50_a10g/`, $0.69), same trace and settings, run a
+day later, with priority set to the turn number:
+
+| Metric | FIFO | Per session | Per chain |
+|---|---:|---:|---:|
+| Human turn p50 TTFT | 5.0 s | 3.1 s | 1.8 s |
+| Human turn p90 TTFT | 19.5 s | 16.0 s | 6.8 s |
+| Human turn p90 full reply | 34.0 s | 37.0 s | 20.9 s |
+| Short chain p90 | 86 s | 100 s | 79 s |
+| Long chain p90 | 521 s | 566 s | 631 s |
+| Agent turn p90 TTFT | 21.6 s | 34.5 s | 40.4 s |
+| Longest TTFT | 39 s | 119 s | 171 s |
+| Mean chain | 134 s | 160 s | 157 s |
+
+Per chain against per session, human TTFT ratio with 95% session bootstrap: p50 0.57
+(0.45-0.76), p90 0.43 (0.26-0.87); faster in 90 of 120 paired human turns. Human turns at
+turn 20 or later: p50 0.89 (0.41-1.48), p90 0.48 (0.13-0.85), so the penalty for returning
+to a long session shows only at p90. Simulator values for this arm, recorded before the
+run: human p50 4.3 s, p90 12.1 s.
+
+### Time-based reset (`results/ctx/idle_*.json`)
+
+Simulator only. Priority is the turns since the session last sat idle for 60, 120 or 300
+s, whatever caused the gap. This approximates the reset in llm-d's `turn-priority`, which
+differs by serving the deepest turn first. Mean of 5 TraceLab samples:
+
+| Sessions/s, metric | Per session | Reset 300 s | Reset 120 s | Reset 60 s | Per chain |
+|---|---:|---:|---:|---:|---:|
+| 0.0125, human p90 | 92 s | 42 s | 28 s | 23 s | 18 s |
+| 0.0125, short chain p90 | 459 s | 399 s | 324 s | 308 s | 261 s |
+| 0.0125, long chain p90 | 10024 s | 12260 s | 13764 s | 14599 s | 15567 s |
+| 0.02, human p90 | 299 s | 127 s | 37 s | 27 s | 21 s |
+| 0.02, short chain p90 | 841 s | 542 s | 414 s | 323 s | 267 s |
+| 0.02, long chain p90 | 17376 s | 18583 s | 19958 s | 21282 s | 21727 s |
+
+- Most of the gain comes from having a reset at all. The human signal adds about 20-25%
+  on human p90 over the best threshold tested, and costs long chains 2-7% more.
+- A 60 s gap catches 65-68% of human messages on TraceLab samples 1 and 3 and 37% on
+  CATraces, with 0.5-1.4 false resets per message caught. Results depend on the threshold.
+- The human signal needs request parsing; a time-based reset does not.
 
 ## Not modeled, all of which favor the policy
 

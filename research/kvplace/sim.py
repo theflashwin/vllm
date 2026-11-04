@@ -556,6 +556,14 @@ def chain_position(s: Session, k: int) -> int:
     return k - start
 
 
+def idle_position(s: Session, k: int, reset_s: float) -> int:
+    """Turns since the session last sat idle for at least `reset_s`."""
+    start = k
+    while start and s.turns[start - 1].tool_duration_s < reset_s:
+        start -= 1
+    return k - start
+
+
 def _block_keys(session: Session, n_tokens: int, block_tokens: int) -> list[BlockKey]:
     keys = []
     # After a context edit the session's later blocks are different content.
@@ -595,10 +603,12 @@ class Simulator:
         context_policy: ContextPolicy | None = None,
         queue_order: str = "fifo",
         chain_aging_s: float | None = None,
+        idle_reset_s: float = 120.0,
     ):
         # "memtime": oracle shortest memory x output first, with backfilling.
         self.queue_order = queue_order
         self.chain_aging_s = chain_aging_s
+        self.idle_reset_s = idle_reset_s
         self.finish_at: dict[tuple[str, int], float] = {}
         self._preempted: dict[tuple[str, int], int] = {}
         self._arrived_of: dict[int, float] = {}
@@ -1031,7 +1041,12 @@ class Simulator:
         if self.queue_order == "memtime":
             self._drain_memtime(now)
             return
-        if self.queue_order in ("chain_las", "chain_sticky", "session_las"):
+        if self.queue_order in (
+            "chain_las",
+            "chain_sticky",
+            "session_las",
+            "idle_las",
+        ):
             self._drain_chains(now)
             return
         if self.queue_order in ("human", "human_preempt"):
@@ -1076,6 +1091,8 @@ class Simulator:
             _, s, k, arrived = item
             if self.queue_order == "session_las":
                 return k, arrived
+            if self.queue_order == "idle_las":
+                return idle_position(s, k, self.idle_reset_s), arrived
             sign = 1 if self.queue_order == "chain_las" else -1
             position = sign * chain_position(s, k)
             if self.chain_aging_s:

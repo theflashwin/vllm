@@ -125,6 +125,8 @@ async def run_session(http, args, model, session, shared, predictor, t0, rows):
             body["kv_transfer_params"] = hint.to_kv_transfer_params()
         if args.chain_priority:
             body["priority"] = chain_position(session, k)
+        if args.session_priority:
+            body["priority"] = k
         sent = time.time()
         ttft = None
         usage = {}
@@ -275,6 +277,11 @@ def main() -> None:
         "--chain-priority",
         action="store_true",
         help="set each request's priority to the turns since the last human message",
+    )
+    p.add_argument(
+        "--session-priority",
+        action="store_true",
+        help="set each request's priority to the turns since the session began",
     )
     p.add_argument("--deadline-s", type=float, help="stop and save rows after this")
     p.add_argument("--out", required=True, help="output directory")
