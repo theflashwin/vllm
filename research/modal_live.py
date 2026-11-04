@@ -129,8 +129,9 @@ def run_live(
     trace_path.write_text(trace)
     results = {}
     for arm in configs:
-        # `tier_lru+chain` serves by priority, set to each turn's chain position.
-        cfg, _, chain = arm.partition("+")
+        # `tier_lru+chain` or `+session` serves by priority, set to the turn's position
+        # in its chain or session.
+        cfg, _, order = arm.partition("+")
         out = Path("/tmp/out") / arm
         out.mkdir(parents=True, exist_ok=True)
         subprocess.run(["rm", "-rf", FS_DIR], check=True)
@@ -141,7 +142,7 @@ def run_live(
             "--num-gpu-blocks-override", str(gpu_blocks),
             "--enable-prompt-tokens-details",
         ]  # fmt: skip
-        if chain:
+        if order:
             cmd += ["--scheduling-policy", "priority"]
         if (kv := kv_config(cfg, block_size, cpu_bytes)) is not None:
             cmd += ["--kv-transfer-config", kv]
@@ -158,7 +159,7 @@ def run_live(
                      "--predictor", predictor, "--time-scale", str(time_scale),
                      "--block-size", str(block_size), "--out", str(out),
                      *(["--deadline-s", str(deadline_s)] if deadline_s else []),
-                     *(["--chain-priority"] if chain else [])],
+                     *([f"--{order}-priority"] if order else [])],
                     capture_output=True, text=True,
                 )  # fmt: skip
                 (out / "summary.txt").write_text(replay.stdout + replay.stderr)

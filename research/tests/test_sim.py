@@ -12,6 +12,7 @@ from kvplace.sim import (
     _block_keys,
     chain_position,
     get_policy,
+    idle_position,
 )
 from kvplace.trace import Session, Turn, read_trace, write_trace
 
@@ -598,3 +599,14 @@ def test_chain_las_serves_the_newer_chain_first_and_sticky_the_older():
 
 def test_chain_aging_lets_a_long_waiting_chain_go_first():
     assert _chain_order("chain_las", chain_aging_s=0.1)[0] == "o"
+
+
+def test_idle_position_resets_after_a_long_gap_whoever_caused_it():
+    turns = [
+        Turn(1, 1, "human", 5.0),
+        Turn(1, 1, "Bash", 200.0),
+        Turn(1, 1),
+        Turn(1, 1),
+    ]
+    session = Session("s0", 0.0, turns)
+    assert [idle_position(session, k, 120.0) for k in range(4)] == [0, 1, 0, 1]

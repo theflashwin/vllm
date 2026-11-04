@@ -112,6 +112,7 @@ def run_one(job: dict) -> dict:
         ),
         queue_order=job["queue_order"],
         chain_aging_s=job["chain_aging_s"],
+        idle_reset_s=job["idle_reset_s"],
     )
     result = sim.run()
     ttft = [r.ttft_s for r in result.records]
@@ -220,12 +221,14 @@ def main() -> None:
             "chain_las",
             "chain_sticky",
             "session_las",
+            "idle_las",
         ],
         default="fifo",
     )
     p.add_argument(
         "--chain-aging", type=float, help="waiting this long counts as one turn fewer"
     )
+    p.add_argument("--idle-reset", type=float, default=120.0)
     p.add_argument("--workers", type=int, default=6)
     p.add_argument("--slos", type=float, nargs="+", default=[2.0, 5.0, 10.0])
     p.add_argument("--out")
@@ -245,6 +248,7 @@ def main() -> None:
             "reread_frac": args.reread_frac,
             "queue_order": args.queue_order,
             "chain_aging_s": args.chain_aging,
+            "idle_reset_s": args.idle_reset,
             "cost_json": args.cost_json,
         }
         for t in args.traces
