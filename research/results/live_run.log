@@ -1,0 +1,7 @@
+✓ Initialized. View run at 
+https://modal.com/apps/contact-43075/main/ap-Bxap7BiDhowpswcvXy3YPP
+✓ Created objects.
+├── ✓ Uploaded /Users/home/Documents/GitHub/vllm/research/modal_live.py
+├── ✓ Uploaded /Users/home/Documents/GitHub/vllm/research/traces/live70.jsonl
+├── ✓ Uploaded /Users/home/Documents/GitHub/vllm/research/kvplace
+└── ✓ Created Function run.

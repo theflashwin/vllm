@@ -1,0 +1,370 @@
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:347] 
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.31.0
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:347]   █▄█▀ █     █     █     █  model   Qwen/Qwen2.5-7B-Instruct
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:347] 
+(APIServer pid=4) INFO 11-02 16:30:47 [api_utils.py:286] non-default args: {'model_tag': 'Qwen/Qwen2.5-7B-Instruct', 'enable_prompt_tokens_details': True, 'model': 'Qwen/Qwen2.5-7B-Instruct', 'max_model_len': 66048, 'hf_overrides': {'max_position_embeddings': 66048}, 'block_size': 16}
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=4) INFO 11-02 16:31:02 [model.py:699] Resolved architecture: Qwen2ForCausalLM
+(APIServer pid=4) INFO 11-02 16:31:02 [model.py:2109] Using max model len 66048
+(APIServer pid=4) INFO 11-02 16:31:02 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(EngineCore pid=51) INFO 11-02 16:31:18 [core.py:129] Initializing a V1 LLM engine (v0.31.0) with config: model='Qwen/Qwen2.5-7B-Instruct', speculative_config=None, tokenizer='Qwen/Qwen2.5-7B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=main, tokenizer_revision=main, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=66048, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=Qwen/Qwen2.5-7B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::qwen4_exp_ple_short_conv', 'vllm::qwen4_exp_qsa_with_output', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=51) INFO 11-02 16:31:20 [parallel_state.py:1825] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_d0f11a25aee54d949b8ca64dbfcefe1e backend=nccl
+(EngineCore pid=51) INFO 11-02 16:31:20 [parallel_state.py:2269] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=51) INFO 11-02 16:31:20 [gpu_worker.py:479] Using V2 Model Runner
+(EngineCore pid=51) INFO 11-02 16:31:21 [model_runner.py:375] Loading model from scratch...
+(EngineCore pid=51) INFO 11-02 16:31:23 [cuda.py:526] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=51) INFO 11-02 16:31:23 [flash_attn.py:1167] Using FlashAttention version 2
+(EngineCore pid=51) INFO 11-02 16:31:24 [weight_utils.py:1063] Filesystem type for checkpoints: 9P. Checkpoint size: 14.19 GiB. Available RAM: 329.21 GiB.
+(EngineCore pid=51) INFO 11-02 16:31:24 [weight_utils.py:1086] Auto-prefetch is disabled because the filesystem (9P) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+Loading safetensors checkpoint shards:   0% Completed | 0/4 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  25% Completed | 1/4 [00:02<00:06,  2.17s/it]
+Loading safetensors checkpoint shards:  50% Completed | 2/4 [00:04<00:04,  2.30s/it]
+Loading safetensors checkpoint shards:  75% Completed | 3/4 [00:06<00:02,  2.34s/it]
+Loading safetensors checkpoint shards: 100% Completed | 4/4 [00:09<00:00,  2.29s/it]
+Loading safetensors checkpoint shards: 100% Completed | 4/4 [00:09<00:00,  2.29s/it]
+
+(EngineCore pid=51) INFO 11-02 16:31:33 [default_loader.py:484] Loading weights took 9.34 seconds
+(EngineCore pid=51) INFO 11-02 16:31:34 [model_runner.py:407] Model loading took 14.3 GiB memory and 13.108357 seconds
+(EngineCore pid=51) INFO 11-02 16:31:34 [topk_topp_sampler.py:96] FlashInfer top-p/top-k sampling disabled via VLLM_USE_FLASHINFER_SAMPLER=0.
+(EngineCore pid=51) WARNING 11-02 16:31:34 [torch_utils.py:274] OMP_NUM_THREADS=8 is set; leaving Torch threads at 8 for serving. Multi-threaded torch CPU ops during serving can degrade performance through spin-wait contention and cgroup CPU-quota throttling.
+(EngineCore pid=51) INFO 11-02 16:31:34 [utils.py:343] Using LBNHC KV cache layout.
+(EngineCore pid=51) INFO 11-02 16:31:42 [backends.py:1090] Using cache directory: /root/.cache/vllm/torch_compile_cache/351cbe002d/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=51) INFO 11-02 16:31:42 [backends.py:1151] Dynamo bytecode transform time: 6.62 s
+(EngineCore pid=51) INFO 11-02 16:31:51 [backends.py:391] Compiling a graph for compile range (1, 2048) takes 9.61 s
+(EngineCore pid=51) INFO 11-02 16:31:57 [backends.py:916] collected artifacts: 29 entries, 3 artifacts, 4287376 bytes total
+(EngineCore pid=51) INFO 11-02 16:31:57 [decorators.py:717] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/7f38732db9a4cbb4aa55348b713fdefc52363c238263fbad78c224d460a794b8/rank_0_0/model
+(EngineCore pid=51) INFO 11-02 16:31:57 [monitor.py:53] torch.compile took 21.42 s in total
+(EngineCore pid=51) INFO 11-02 16:31:57 [monitor.py:81] Initial profiling/warmup run took 0.19 s
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:11,  4.34it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:10,  4.69it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:09,  4.83it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:00<00:09,  4.89it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:01<00:09,  4.90it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:01<00:09,  4.92it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:08,  4.95it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:08,  4.91it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:01<00:08,  5.05it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:02<00:07,  5.17it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:02<00:07,  5.25it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:02<00:07,  5.15it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:02<00:07,  5.22it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:02<00:07,  5.24it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:02<00:06,  5.30it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:03<00:06,  5.35it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:03<00:05,  5.93it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:03<00:05,  6.54it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:03<00:04,  7.05it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:03<00:04,  7.42it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:03<00:03,  7.75it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:03<00:03,  8.00it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:03<00:03,  8.20it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:04<00:03,  8.35it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:04<00:03,  8.59it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:04<00:02,  9.40it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:04<00:02,  9.89it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:04<00:02,  9.91it/s]Capturing CUDA graphs (PIECEWISE):  63%|██████▎   | 32/51 [00:04<00:01,  9.64it/s]Capturing CUDA graphs (PIECEWISE):  67%|██████▋   | 34/51 [00:05<00:01, 10.43it/s]Capturing CUDA graphs (PIECEWISE):  71%|███████   | 36/51 [00:05<00:01, 11.05it/s]Capturing CUDA graphs (PIECEWISE):  75%|███████▍  | 38/51 [00:05<00:01, 11.61it/s]Capturing CUDA graphs (PIECEWISE):  78%|███████▊  | 40/51 [00:05<00:00, 11.78it/s]Capturing CUDA graphs (PIECEWISE):  82%|████████▏ | 42/51 [00:05<00:00, 12.03it/s]Capturing CUDA graphs (PIECEWISE):  86%|████████▋ | 44/51 [00:05<00:00, 12.22it/s]Capturing CUDA graphs (PIECEWISE):  90%|█████████ | 46/51 [00:05<00:00, 12.64it/s]Capturing CUDA graphs (PIECEWISE):  94%|█████████▍| 48/51 [00:06<00:00, 12.95it/s]Capturing CUDA graphs (PIECEWISE):  98%|█████████▊| 50/51 [00:06<00:00, 13.21it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:06<00:00,  8.02it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/2 [00:00<?, ?it/s]Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:00<00:00, 10.43it/s]Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:00<00:00, 10.40it/s]
+(EngineCore pid=51) INFO 11-02 16:32:06 [model_runner.py:1087] Graph capturing finished in 7 secs, took 0.33 GiB
+(EngineCore pid=51) INFO 11-02 16:32:06 [gpu_worker.py:692] Available KV cache memory: 4.31 GiB
+(EngineCore pid=51) INFO 11-02 16:32:06 [gpu_worker.py:707] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9200 is equivalent to --gpu-memory-utilization=0.9018 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9382. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=51) INFO 11-02 16:32:06 [kv_cache_utils.py:2464] GPU KV cache size: 80,640 tokens, Maximum concurrency for 66,048 tokens per request: 1.22x
+(EngineCore pid=51) INFO 11-02 16:32:06 [kernel_warmup.py:172] JIT kernel warmup starting.
+(EngineCore pid=51) INFO 11-02 16:32:06 [kernel_warmup.py:185] JIT kernel warmup finished in 0.00s.
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:10,  4.66it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:09,  4.91it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:09,  5.00it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:00<00:09,  5.05it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:00<00:09,  5.08it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:01<00:08,  5.10it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:08,  5.05it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:08,  5.08it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:01<00:08,  5.20it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:01<00:07,  5.13it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:02<00:07,  5.27it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:02<00:07,  5.35it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:02<00:07,  5.41it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:02<00:06,  5.48it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:02<00:06,  5.51it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:03<00:06,  5.55it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:03<00:05,  6.27it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:03<00:04,  6.74it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:03<00:04,  7.30it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:03<00:04,  7.74it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:03<00:03,  8.05it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:03<00:03,  8.34it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:03<00:03,  8.51it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:03<00:03,  8.70it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:04<00:02,  9.03it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:04<00:02,  9.77it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:04<00:02, 10.33it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:04<00:01, 10.74it/s]Capturing CUDA graphs (PIECEWISE):  65%|██████▍   | 33/51 [00:04<00:01, 11.22it/s]Capturing CUDA graphs (PIECEWISE):  69%|██████▊   | 35/51 [00:04<00:01, 11.42it/s]Capturing CUDA graphs (PIECEWISE):  73%|███████▎  | 37/51 [00:05<00:01, 11.83it/s]Capturing CUDA graphs (PIECEWISE):  76%|███████▋  | 39/51 [00:05<00:00, 12.15it/s]Capturing CUDA graphs (PIECEWISE):  80%|████████  | 41/51 [00:05<00:00, 12.46it/s]Capturing CUDA graphs (PIECEWISE):  84%|████████▍ | 43/51 [00:05<00:00, 13.01it/s]Capturing CUDA graphs (PIECEWISE):  88%|████████▊ | 45/51 [00:05<00:00, 12.93it/s]Capturing CUDA graphs (PIECEWISE):  92%|█████████▏| 47/51 [00:05<00:00, 13.02it/s]Capturing CUDA graphs (PIECEWISE):  96%|█████████▌| 49/51 [00:05<00:00, 13.40it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:06<00:00, 13.75it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:06<00:00,  8.37it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/35 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):   6%|▌         | 2/35 [00:00<00:03, 10.72it/s]Capturing CUDA graphs (FULL):  11%|█▏        | 4/35 [00:00<00:02, 10.63it/s]Capturing CUDA graphs (FULL):  17%|█▋        | 6/35 [00:00<00:02, 10.66it/s]Capturing CUDA graphs (FULL):  23%|██▎       | 8/35 [00:00<00:02, 10.59it/s]Capturing CUDA graphs (FULL):  29%|██▊       | 10/35 [00:00<00:02, 11.24it/s]Capturing CUDA graphs (FULL):  34%|███▍      | 12/35 [00:01<00:01, 12.04it/s]Capturing CUDA graphs (FULL):  40%|████      | 14/35 [00:01<00:01, 12.62it/s]Capturing CUDA graphs (FULL):  46%|████▌     | 16/35 [00:01<00:01, 13.01it/s]Capturing CUDA graphs (FULL):  51%|█████▏    | 18/35 [00:01<00:01, 14.07it/s]Capturing CUDA graphs (FULL):  57%|█████▋    | 20/35 [00:01<00:01, 14.79it/s]Capturing CUDA graphs (FULL):  63%|██████▎   | 22/35 [00:01<00:00, 15.56it/s]Capturing CUDA graphs (FULL):  69%|██████▊   | 24/35 [00:01<00:00, 15.74it/s]Capturing CUDA graphs (FULL):  74%|███████▍  | 26/35 [00:01<00:00, 16.55it/s]Capturing CUDA graphs (FULL):  83%|████████▎ | 29/35 [00:02<00:00, 17.71it/s]Capturing CUDA graphs (FULL):  89%|████████▊ | 31/35 [00:02<00:00, 17.29it/s]Capturing CUDA graphs (FULL):  94%|█████████▍| 33/35 [00:02<00:00, 17.78it/s]Capturing CUDA graphs (FULL): 100%|██████████| 35/35 [00:02<00:00, 14.59it/s]
+(EngineCore pid=51) INFO 11-02 16:32:35 [model_runner.py:1087] Graph capturing finished in 9 secs, took 0.24 GiB
+(EngineCore pid=51) INFO 11-02 16:32:35 [gpu_worker.py:892] CUDA graph pool memory: 0.24 GiB (actual), 0.4 GiB (estimated), difference: 0.16 GiB (68.0%).
+(EngineCore pid=51) INFO 11-02 16:32:35 [gpu_worker.py:955] Free memory on device (21.81/22.06 GiB) on startup. Desired GPU memory utilization is (0.92, 20.29 GiB). Actual usage is 14.55 GiB for consumed memory (weights + non-torch), 1.44 GiB for peak activation, and 0.24 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=4211234264` (3.92 GiB) to fit into requested memory, or `--kv-cache-memory=5835239936` (5.43 GiB) to fully utilize gpu memory. Current kv cache memory in use is 4.31 GiB.
+(EngineCore pid=51) INFO 11-02 16:32:37 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(EngineCore pid=51) INFO 11-02 16:32:37 [core.py:373] init engine (profile, create kv cache, warmup model) took 63.46 s (compilation: 21.42 s)
+(EngineCore pid=51) INFO 11-02 16:32:39 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=4) INFO 11-02 16:32:39 [entry.py:132] Supported tasks: ['generate']
+(APIServer pid=4) INFO 11-02 16:32:39 [factories.py:76] Scale-out endpoints are disabled. Set --enable-scale-out to enable them.
+(APIServer pid=4) INFO 11-02 16:32:41 [hf.py:646] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=4) WARNING 11-02 16:32:41 [model.py:1850] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'repetition_penalty': 1.05, 'temperature': 0.7, 'top_k': 20, 'top_p': 0.8}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=4) INFO 11-02 16:32:41 [entry.py:136] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:60] Available routes are:
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /docs, Methods: GET, HEAD
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /load, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /version, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /kv_event_sources, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /health, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /metrics, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /tokenize, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /detokenize, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/models, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /ping, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /ping, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /invocations, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/responses, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/completions, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/messages, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /generative_scoring, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=4) INFO 11-02 16:32:41 [launcher.py:69] Route: /is_scaling_elastic_ep, Methods: POST
+INFO:     Started server process [4]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:64810 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:32:51 [loggers.py:320] Engine 000: Avg prompt throughput: 557.6 tokens/s, Avg generation throughput: 15.5 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 58.5%
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16311 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39358 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:33:01 [loggers.py:320] Engine 000: Avg prompt throughput: 2470.2 tokens/s, Avg generation throughput: 71.8 tokens/s, Running: 8 reqs, Waiting: 0 reqs, GPU KV cache usage: 20.5%, Prefix cache hit rate: 52.9%
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16311 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39358 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16311 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39358 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16311 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39358 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46800 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50702 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41258 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59362 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41190 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21702 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21243 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42118 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:33:11 [loggers.py:320] Engine 000: Avg prompt throughput: 3276.5 tokens/s, Avg generation throughput: 94.5 tokens/s, Running: 16 reqs, Waiting: 0 reqs, GPU KV cache usage: 41.0%, Prefix cache hit rate: 51.9%
+INFO:     127.0.0.1:16103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:33:21 [loggers.py:320] Engine 000: Avg prompt throughput: 2506.7 tokens/s, Avg generation throughput: 29.3 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.9%, Prefix cache hit rate: 53.6%
+INFO:     127.0.0.1:37379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31815 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:33:31 [loggers.py:320] Engine 000: Avg prompt throughput: 3257.3 tokens/s, Avg generation throughput: 14.1 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 39.8%, Prefix cache hit rate: 54.0%
+INFO:     127.0.0.1:34158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31815 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:33:41 [loggers.py:320] Engine 000: Avg prompt throughput: 3250.8 tokens/s, Avg generation throughput: 18.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 49.5%
+INFO:     127.0.0.1:31815 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31815 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37137 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35190 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42895 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33295 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61821 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:33:51 [loggers.py:320] Engine 000: Avg prompt throughput: 3212.1 tokens/s, Avg generation throughput: 42.9 tokens/s, Running: 8 reqs, Waiting: 0 reqs, GPU KV cache usage: 80.0%, Prefix cache hit rate: 53.5%
+INFO:     127.0.0.1:31815 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:34:01 [loggers.py:320] Engine 000: Avg prompt throughput: 51.2 tokens/s, Avg generation throughput: 8.8 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 38.1%, Prefix cache hit rate: 50.4%
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:34:11 [loggers.py:320] Engine 000: Avg prompt throughput: 3252.0 tokens/s, Avg generation throughput: 6.6 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 27.9%, Prefix cache hit rate: 53.3%
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:34:21 [loggers.py:320] Engine 000: Avg prompt throughput: 3199.6 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 25.4%, Prefix cache hit rate: 50.3%
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:34:31 [loggers.py:320] Engine 000: Avg prompt throughput: 3254.0 tokens/s, Avg generation throughput: 13.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 10.2%, Prefix cache hit rate: 52.4%
+(APIServer pid=4) INFO 11-02 16:34:41 [loggers.py:320] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 43.2%, Prefix cache hit rate: 52.4%
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:35:01 [loggers.py:320] Engine 000: Avg prompt throughput: 6401.2 tokens/s, Avg generation throughput: 6.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 79.5%, Prefix cache hit rate: 56.2%
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:35:11 [loggers.py:320] Engine 000: Avg prompt throughput: 1564.7 tokens/s, Avg generation throughput: 38.7 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 10.2%, Prefix cache hit rate: 59.2%
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23632 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20660 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23632 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20660 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:35:21 [loggers.py:320] Engine 000: Avg prompt throughput: 2914.9 tokens/s, Avg generation throughput: 60.3 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 58.3%
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23632 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20660 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23632 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20660 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18256 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26202 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29683 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17505 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41100 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62165 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23268 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63991 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51998 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:35:31 [loggers.py:320] Engine 000: Avg prompt throughput: 2878.1 tokens/s, Avg generation throughput: 106.5 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 10.0%, Prefix cache hit rate: 58.3%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:35:41 [loggers.py:320] Engine 000: Avg prompt throughput: 2505.3 tokens/s, Avg generation throughput: 16.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 58.2%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38408 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:35:51 [loggers.py:320] Engine 000: Avg prompt throughput: 2457.3 tokens/s, Avg generation throughput: 26.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 9.9%, Prefix cache hit rate: 58.0%
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38408 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38408 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:36:01 [loggers.py:320] Engine 000: Avg prompt throughput: 3999.2 tokens/s, Avg generation throughput: 0.5 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 9.9%, Prefix cache hit rate: 56.0%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38408 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22124 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28636 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57052 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38269 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45297 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38408 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:36:11 [loggers.py:320] Engine 000: Avg prompt throughput: 2463.4 tokens/s, Avg generation throughput: 51.6 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 15.2%, Prefix cache hit rate: 56.4%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:36:21 [loggers.py:320] Engine 000: Avg prompt throughput: 3201.3 tokens/s, Avg generation throughput: 5.9 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 39.8%, Prefix cache hit rate: 57.4%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:36:31 [loggers.py:320] Engine 000: Avg prompt throughput: 51.2 tokens/s, Avg generation throughput: 0.7 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 38.1%, Prefix cache hit rate: 57.1%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:36:41 [loggers.py:320] Engine 000: Avg prompt throughput: 3199.8 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 35.6%, Prefix cache hit rate: 55.8%
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19373 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19373 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:36:51 [loggers.py:320] Engine 000: Avg prompt throughput: 3253.8 tokens/s, Avg generation throughput: 13.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 22.9%, Prefix cache hit rate: 56.2%
+(APIServer pid=4) INFO 11-02 16:37:01 [loggers.py:320] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 53.3%, Prefix cache hit rate: 56.2%
+INFO:     127.0.0.1:19373 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19373 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 11-02 16:37:19 [launcher.py:128] [shutdown] API server: shutdown triggered
+(APIServer pid=4) INFO 11-02 16:37:19 [launcher.py:144] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(APIServer pid=4) INFO 11-02 16:37:19 [core_client.py:762] [shutdown] MPClient: start timeout=0s
+(APIServer pid=4) INFO 11-02 16:37:19 [core_client.py:764] [shutdown] MPClient: stopping engine manager
+(APIServer pid=4) INFO 11-02 16:37:19 [utils.py:638] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=4) WARNING 11-02 16:37:19 [utils.py:658] [shutdown] Process manager: force killing remaining processes count=1
+(EngineCore pid=51) INFO 11-02 16:37:19 [core.py:1409] [shutdown] EngineCore: trigger received signal=SIGTERM
+(APIServer pid=4) WARNING 11-02 16:37:19 [utils.py:663] [shutdown] Process manager: force killing remaining process EngineCore pid 51
+(EngineCore pid=51) INFO 11-02 16:37:19 [core.py:1558] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=51) INFO 11-02 16:37:19 [core.py:1589] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=51) INFO 11-02 16:37:19 [core.py:1422] [shutdown] EngineCore: exiting busy loop
+(APIServer pid=4) INFO 11-02 16:37:19 [core_client.py:766] [shutdown] MPClient: engine manager stopped
+(APIServer pid=4) INFO 11-02 16:37:19 [core_client.py:767] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=4) INFO 11-02 16:37:19 [core_client.py:769] [shutdown] MPClient: complete
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871] AsyncLLM output_handler failed.
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871] Traceback (most recent call last):
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871]   File "/opt/kvplace/.venv/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 817, in output_handler
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871]     outputs = await engine_core.get_output_async()
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871]   File "/opt/kvplace/.venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1215, in get_output_async
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871]     raise self._format_exception(outputs) from None
+(APIServer pid=4) ERROR 11-02 16:37:19 [async_llm.py:871] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(APIServer pid=4) INFO 11-02 16:37:19 [launcher.py:153] [shutdown] API server: engine client stopped
+(APIServer pid=4) INFO 11-02 16:37:19 [launcher.py:156] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=4) INFO 11-02 16:37:19 [launcher.py:178] [shutdown] API server: shutting down FastAPI HTTP server
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+/usr/local/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

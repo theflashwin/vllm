@@ -1,0 +1,257 @@
+tl300_sp_s1.jsonl none r=0.004 p50=0.55 p90=1.94 p99=8.50 session=6254s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.005 p50=0.59 p90=2.65 p99=12.61 session=6397s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.006 p50=0.82 p90=18.35 p99=46.84 session=6712s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.008 p50=35.14 p90=154.21 p99=206.45 session=8480s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.01 p50=92.20 p90=347.67 p99=406.15 session=11239s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.0125 p50=167.33 p90=455.58 p99=518.10 session=13023s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.015 p50=213.74 p90=489.44 p99=568.17 session=14067s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.02 p50=282.41 p90=529.19 p99=591.40 session=15422s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.03 p50=307.75 p90=580.17 p99=653.50 session=17003s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.04 p50=342.98 p90=597.46 p99=687.75 session=17767s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.06 p50=400.93 p90=600.54 p99=699.85 session=18510s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl fixed:64000 r=0.004 p50=0.43 p90=1.27 p99=3.55 session=6045s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.005 p50=0.44 p90=1.30 p99=3.63 session=6087s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.006 p50=0.44 p90=1.34 p99=3.68 session=6144s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.008 p50=0.45 p90=1.49 p99=3.95 session=6295s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.01 p50=0.46 p90=1.82 p99=4.96 session=6496s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.0125 p50=0.54 p90=16.12 p99=35.60 session=6964s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.015 p50=7.39 p90=54.04 p99=80.30 session=7737s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.02 p50=35.88 p90=206.66 p99=250.00 session=9771s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.03 p50=83.15 p90=304.42 p99=348.13 session=12172s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.04 p50=122.74 p90=338.23 p99=371.85 session=13094s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000 r=0.06 p50=182.07 p90=382.47 p99=412.83 session=14312s drops=613 sessions=0.62 lost=0.477
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.004 p50=0.57 p90=4.88 p99=16.07 session=6372s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.005 p50=0.61 p90=6.04 p99=18.74 session=6603s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.006 p50=1.27 p90=26.57 p99=56.47 session=7109s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.008 p50=40.00 p90=152.86 p99=205.50 session=9137s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.01 p50=72.97 p90=310.24 p99=372.39 session=11533s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.0125 p50=137.54 p90=404.45 p99=469.42 session=13299s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.015 p50=190.78 p90=409.24 p99=487.45 session=14305s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.02 p50=221.71 p90=484.02 p99=624.21 session=15923s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.03 p50=273.97 p90=522.98 p99=595.05 session=17414s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.04 p50=304.95 p90=546.80 p99=631.48 session=18220s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:rolling r=0.06 p50=327.10 p90=563.36 p99=693.28 session=19080s drops=1135 sessions=0.47 lost=0.200
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.004 p50=0.56 p90=2.72 p99=15.10 session=6318s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.005 p50=0.61 p90=4.40 p99=20.89 session=6496s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.006 p50=1.10 p90=25.87 p99=57.66 session=6921s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.008 p50=51.77 p90=182.17 p99=254.92 session=9155s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.01 p50=89.29 p90=350.85 p99=435.30 session=11670s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.0125 p50=166.76 p90=449.92 p99=522.62 session=13419s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.015 p50=225.87 p90=476.70 p99=523.41 session=14437s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.02 p50=264.57 p90=517.28 p99=590.62 session=15846s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.03 p50=306.34 p90=568.20 p99=729.83 session=17338s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.04 p50=341.18 p90=587.47 p99=672.34 session=18059s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:64000:refetch r=0.06 p50=397.90 p90=604.89 p99=727.52 session=18968s drops=374 sessions=0.30 lost=0.069
+tl300_sp_s1.jsonl fixed:32000 r=0.004 p50=0.31 p90=0.76 p99=1.44 session=5955s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.005 p50=0.31 p90=0.76 p99=1.52 session=5972s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.006 p50=0.31 p90=0.77 p99=1.54 session=5991s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.008 p50=0.31 p90=0.78 p99=1.63 session=6037s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.01 p50=0.31 p90=0.79 p99=1.68 session=6080s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.0125 p50=0.32 p90=0.82 p99=1.76 session=6161s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.015 p50=0.32 p90=0.87 p99=1.83 session=6264s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.02 p50=0.34 p90=0.96 p99=2.00 session=6472s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.03 p50=0.56 p90=18.20 p99=37.32 session=7204s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.04 p50=1.73 p90=46.21 p99=59.52 session=7841s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000 r=0.06 p50=15.58 p90=72.26 p99=91.89 session=8568s drops=1616 sessions=0.85 lost=0.726
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.004 p50=0.61 p90=5.12 p99=16.47 session=6409s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.005 p50=0.66 p90=6.27 p99=19.45 session=6667s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.006 p50=1.71 p90=31.76 p99=64.67 session=7248s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.008 p50=45.78 p90=164.23 p99=220.70 session=9478s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.01 p50=79.63 p90=314.40 p99=373.13 session=11849s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.0125 p50=154.63 p90=402.37 p99=472.19 session=13632s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.015 p50=188.42 p90=420.43 p99=495.64 session=14705s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.02 p50=223.99 p90=499.99 p99=584.13 session=16328s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.03 p50=287.32 p90=520.03 p99=599.51 session=17804s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.04 p50=313.60 p90=545.06 p99=633.28 session=18656s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:rolling r=0.06 p50=334.31 p90=574.49 p99=673.89 session=19527s drops=1595 sessions=0.57 lost=0.217
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.004 p50=0.57 p90=2.85 p99=14.62 session=6322s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.005 p50=0.62 p90=4.48 p99=22.75 session=6504s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.006 p50=1.21 p90=25.98 p99=61.26 session=6938s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.008 p50=51.37 p90=191.09 p99=249.92 session=9237s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.01 p50=90.06 p90=353.45 p99=451.15 session=11763s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.0125 p50=165.31 p90=450.14 p99=509.83 session=13468s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.015 p50=229.73 p90=475.67 p99=535.16 session=14489s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.02 p50=260.59 p90=529.91 p99=601.39 session=15906s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.03 p50=301.56 p90=565.84 p99=713.96 session=17470s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.04 p50=340.61 p90=583.72 p99=683.24 session=18188s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s1.jsonl fixed:32000:refetch r=0.06 p50=402.55 p90=599.04 p99=704.67 session=19082s drops=456 sessions=0.36 lost=0.072
+tl300_sp_s3.jsonl none r=0.004 p50=0.59 p90=1.92 p99=6.87 session=12822s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.005 p50=0.60 p90=2.08 p99=7.67 session=12913s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.006 p50=0.65 p90=4.44 p99=32.03 session=13084s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.008 p50=3.85 p90=73.87 p99=130.39 session=13968s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.01 p50=42.90 p90=253.79 p99=362.07 session=15989s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.0125 p50=142.67 p90=403.54 p99=516.03 session=18096s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.015 p50=164.58 p90=493.21 p99=595.57 session=19204s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.02 p50=237.33 p90=555.63 p99=688.26 session=20634s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.03 p50=294.85 p90=541.74 p99=648.31 session=21564s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.04 p50=338.65 p90=583.16 p99=712.38 session=22281s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.06 p50=357.20 p90=594.65 p99=683.41 session=22806s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl fixed:64000 r=0.004 p50=0.43 p90=1.31 p99=3.59 session=12646s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.005 p50=0.44 p90=1.36 p99=3.59 session=12679s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.006 p50=0.44 p90=1.43 p99=3.76 session=12719s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.008 p50=0.45 p90=1.54 p99=3.99 session=12828s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.01 p50=0.46 p90=1.76 p99=4.51 session=12984s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.0125 p50=0.49 p90=4.72 p99=24.91 session=13256s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.015 p50=0.76 p90=39.90 p99=81.40 session=13815s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.02 p50=12.34 p90=153.57 p99=207.46 session=15213s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.03 p50=39.53 p90=252.59 p99=300.36 session=17101s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.04 p50=60.90 p90=301.09 p99=346.63 session=17884s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000 r=0.06 p50=87.51 p90=340.14 p99=379.77 session=18739s drops=561 sessions=0.52 lost=0.488
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.004 p50=0.59 p90=4.82 p99=16.54 session=12915s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.005 p50=0.61 p90=5.20 p99=17.33 session=13048s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.006 p50=0.70 p90=8.60 p99=29.90 session=13276s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.008 p50=7.16 p90=109.62 p99=160.40 session=14640s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.01 p50=41.90 p90=252.79 p99=380.57 session=16561s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.0125 p50=87.74 p90=352.05 p99=527.83 session=18487s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.015 p50=109.50 p90=443.30 p99=536.54 session=19592s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.02 p50=195.62 p90=480.70 p99=620.06 session=21006s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.03 p50=257.50 p90=528.72 p99=615.24 session=22176s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.04 p50=269.23 p90=555.73 p99=653.55 session=22814s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:rolling r=0.06 p50=291.93 p90=576.58 p99=716.85 session=23535s drops=1028 sessions=0.40 lost=0.190
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.004 p50=0.60 p90=2.50 p99=13.72 session=12862s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.005 p50=0.62 p90=2.78 p99=14.87 session=12974s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.006 p50=0.69 p90=8.25 p99=33.33 session=13166s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.008 p50=8.73 p90=98.89 p99=185.22 session=14383s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.01 p50=48.12 p90=275.48 p99=390.23 session=16418s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.0125 p50=131.31 p90=418.66 p99=542.13 session=18474s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.015 p50=158.17 p90=488.42 p99=595.80 session=19600s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.02 p50=225.76 p90=530.65 p99=730.07 session=20899s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.03 p50=291.32 p90=558.91 p99=633.14 session=22020s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.04 p50=319.82 p90=562.08 p99=687.27 session=22606s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:64000:refetch r=0.06 p50=354.62 p90=588.15 p99=738.54 session=23298s drops=282 sessions=0.26 lost=0.043
+tl300_sp_s3.jsonl fixed:32000 r=0.004 p50=0.31 p90=0.76 p99=1.46 session=12576s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.005 p50=0.31 p90=0.76 p99=1.51 session=12589s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.006 p50=0.31 p90=0.77 p99=1.58 session=12604s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.008 p50=0.31 p90=0.77 p99=1.63 session=12637s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.01 p50=0.31 p90=0.78 p99=1.65 session=12678s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.0125 p50=0.32 p90=0.81 p99=1.69 session=12735s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.015 p50=0.32 p90=0.84 p99=1.75 session=12805s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.02 p50=0.33 p90=0.90 p99=1.92 session=12988s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.03 p50=0.38 p90=15.00 p99=26.44 session=13533s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.04 p50=0.75 p90=37.26 p99=59.26 session=14031s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000 r=0.06 p50=1.46 p90=68.89 p99=95.57 session=14638s drops=1545 sessions=0.83 lost=0.733
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.004 p50=0.62 p90=4.91 p99=16.52 session=12931s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.005 p50=0.64 p90=5.04 p99=17.09 session=13069s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.006 p50=0.74 p90=9.14 p99=31.39 session=13316s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.008 p50=6.56 p90=107.05 p99=183.02 session=14744s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.01 p50=45.10 p90=254.33 p99=374.56 session=16696s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.0125 p50=91.46 p90=361.34 p99=486.81 session=18566s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.015 p50=116.42 p90=451.17 p99=582.66 session=19838s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.02 p50=196.32 p90=484.02 p99=626.18 session=21182s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.03 p50=256.64 p90=536.88 p99=623.84 session=22384s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.04 p50=274.64 p90=555.34 p99=648.82 session=23006s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:rolling r=0.06 p50=291.63 p90=589.03 p99=695.11 session=23775s drops=1326 sessions=0.50 lost=0.203
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.004 p50=0.60 p90=2.55 p99=13.30 session=12865s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.005 p50=0.62 p90=2.87 p99=13.77 session=12980s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.006 p50=0.70 p90=8.25 p99=34.70 session=13176s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.008 p50=8.49 p90=102.23 p99=178.86 session=14422s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.01 p50=51.34 p90=273.06 p99=396.99 session=16474s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.0125 p50=127.62 p90=420.10 p99=575.76 session=18522s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.015 p50=155.60 p90=487.53 p99=615.42 session=19623s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.02 p50=222.62 p90=536.78 p99=697.96 session=20985s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.03 p50=294.64 p90=571.89 p99=682.09 session=22170s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.04 p50=322.40 p90=580.56 p99=645.77 session=22664s drops=339 sessions=0.31 lost=0.046
+tl300_sp_s3.jsonl fixed:32000:refetch r=0.06 p50=357.06 p90=600.00 p99=726.37 session=23356s drops=339 sessions=0.31 lost=0.046
+cat.jsonl none r=0.004 p50=0.36 p90=0.86 p99=4.41 session=21003s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.005 p50=0.36 p90=0.86 p99=4.48 session=21021s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.006 p50=0.36 p90=0.89 p99=6.10 session=21037s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.008 p50=0.37 p90=0.93 p99=8.89 session=21075s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.01 p50=0.38 p90=0.98 p99=10.52 session=21129s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.0125 p50=0.40 p90=1.31 p99=13.88 session=21234s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.015 p50=0.44 p90=2.47 p99=17.54 session=21346s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.02 p50=0.90 p90=198.28 p99=243.78 session=24882s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.03 p50=112.72 p90=297.07 p99=315.95 session=31854s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.04 p50=214.53 p90=318.11 p99=333.32 session=34481s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.06 p50=275.78 p90=325.19 p99=338.02 session=36766s drops=0 sessions=0.00 lost=0.000
+cat.jsonl fixed:64000 r=0.004 p50=0.26 p90=0.60 p99=3.28 session=20984s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.005 p50=0.26 p90=0.62 p99=3.34 session=20995s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.006 p50=0.26 p90=0.63 p99=3.39 session=21005s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.008 p50=0.26 p90=0.65 p99=3.40 session=21028s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.01 p50=0.27 p90=0.70 p99=3.42 session=21060s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.0125 p50=0.28 p90=0.76 p99=3.46 session=21111s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.015 p50=0.28 p90=0.85 p99=3.55 session=21170s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.02 p50=0.31 p90=1.25 p99=4.00 session=21326s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.03 p50=0.50 p90=8.55 p99=15.38 session=21790s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.04 p50=4.44 p90=17.75 p99=30.35 session=22280s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000 r=0.06 p50=16.60 p90=197.29 p99=211.88 session=27889s drops=337 sessions=0.80 lost=0.436
+cat.jsonl fixed:64000:rolling r=0.004 p50=0.30 p90=1.63 p99=8.04 session=21053s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.005 p50=0.30 p90=1.78 p99=8.88 session=21079s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.006 p50=0.31 p90=1.95 p99=11.57 session=21105s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.008 p50=0.32 p90=2.29 p99=14.83 session=21183s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.01 p50=0.34 p90=2.66 p99=19.61 session=21285s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.0125 p50=0.38 p90=3.21 p99=22.66 session=21471s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.015 p50=0.48 p90=7.26 p99=30.23 session=21738s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.02 p50=0.91 p90=146.69 p99=170.82 session=23842s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.03 p50=11.60 p90=228.32 p99=247.87 session=28479s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.04 p50=157.94 p90=259.41 p99=275.55 session=32819s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:rolling r=0.06 p50=173.70 p90=285.61 p99=304.06 session=34156s drops=887 sessions=0.73 lost=0.312
+cat.jsonl fixed:64000:refetch r=0.004 p50=0.34 p90=1.16 p99=9.46 session=21039s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.005 p50=0.35 p90=1.23 p99=10.40 session=21066s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.006 p50=0.35 p90=1.37 p99=11.83 session=21088s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.008 p50=0.36 p90=1.56 p99=13.88 session=21155s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.01 p50=0.38 p90=1.99 p99=19.86 session=21255s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.0125 p50=0.43 p90=3.97 p99=25.20 session=21445s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.015 p50=0.59 p90=8.55 p99=34.80 session=21730s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.02 p50=3.23 p90=203.91 p99=229.49 session=25541s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.03 p50=37.09 p90=280.92 p99=300.12 session=31452s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.04 p50=218.53 p90=296.52 p99=315.68 session=35035s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:64000:refetch r=0.06 p50=238.33 p90=304.89 p99=330.53 session=36313s drops=449 sessions=0.65 lost=0.116
+cat.jsonl fixed:32000 r=0.004 p50=0.18 p90=0.51 p99=1.38 session=20955s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.005 p50=0.18 p90=0.52 p99=1.38 session=20961s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.006 p50=0.18 p90=0.52 p99=1.39 session=20965s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.008 p50=0.19 p90=0.55 p99=1.40 session=20978s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.01 p50=0.19 p90=0.60 p99=1.42 session=20995s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.0125 p50=0.20 p90=0.73 p99=1.58 session=21019s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.015 p50=0.20 p90=0.76 p99=1.61 session=21043s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.02 p50=0.21 p90=0.96 p99=1.75 session=21086s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.03 p50=0.24 p90=1.03 p99=2.01 session=21230s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.04 p50=0.28 p90=1.14 p99=2.43 session=21408s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000 r=0.06 p50=0.34 p90=2.13 p99=4.75 session=21704s drops=911 sessions=0.96 lost=0.700
+cat.jsonl fixed:32000:rolling r=0.004 p50=0.35 p90=2.38 p99=8.66 session=21089s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.005 p50=0.36 p90=2.48 p99=8.85 session=21123s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.006 p50=0.36 p90=2.58 p99=12.40 session=21157s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.008 p50=0.39 p90=2.82 p99=12.99 session=21272s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.01 p50=0.42 p90=3.14 p99=21.45 session=21445s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.0125 p50=0.52 p90=4.41 p99=25.64 session=21741s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.015 p50=0.82 p90=16.92 p99=41.53 session=22210s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.02 p50=3.33 p90=161.09 p99=187.02 session=24757s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.03 p50=17.22 p90=211.50 p99=229.70 session=29003s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.04 p50=94.03 p90=236.06 p99=253.30 session=31776s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:rolling r=0.06 p50=141.61 p90=271.00 p99=287.90 session=33329s drops=1857 sessions=0.87 lost=0.367
+cat.jsonl fixed:32000:refetch r=0.004 p50=0.35 p90=1.34 p99=9.06 session=21041s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.005 p50=0.35 p90=1.48 p99=10.19 session=21069s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.006 p50=0.36 p90=1.68 p99=11.99 session=21097s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.008 p50=0.37 p90=1.84 p99=14.23 session=21158s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.01 p50=0.38 p90=2.18 p99=19.54 session=21267s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.0125 p50=0.43 p90=3.78 p99=24.35 session=21449s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.015 p50=0.61 p90=8.78 p99=32.65 session=21748s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.02 p50=3.59 p90=200.85 p99=224.55 session=25201s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.03 p50=25.09 p90=271.38 p99=289.93 session=31008s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.04 p50=211.98 p90=284.92 p99=298.23 session=34619s drops=615 sessions=0.77 lost=0.131
+cat.jsonl fixed:32000:refetch r=0.06 p50=234.80 p90=294.31 p99=311.50 session=35959s drops=615 sessions=0.77 lost=0.131
+
+capacity (sessions/s) at p90 TTFT SLO; gain vs none on the same trace
+SLO 2 s
+  none                 cap=0.008 gain=+0% lost(all rates)=0.000
+  fixed:64000          cap=0.014 gain=+108% lost(all rates)=0.467
+  fixed:64000:rolling  cap=0.002 gain=-85% lost(all rates)=0.234
+  fixed:64000:refetch  cap=0.003 gain=-76% lost(all rates)=0.076
+  fixed:32000          cap=0.033 gain=+359% lost(all rates)=0.720
+  fixed:32000:rolling  cap=0.000 gain=-100% lost(all rates)=0.262
+  fixed:32000:refetch  cap=0.003 gain=-79% lost(all rates)=0.083
+SLO 5 s
+  none                 cap=0.009 gain=+0% lost(all rates)=0.000
+  fixed:64000          cap=0.016 gain=+93% lost(all rates)=0.467
+  fixed:64000:rolling  cap=0.007 gain=-19% lost(all rates)=0.234
+  fixed:64000:refetch  cap=0.008 gain=-9% lost(all rates)=0.076
+  fixed:32000          cap=0.035 gain=+304% lost(all rates)=0.720
+  fixed:32000:rolling  cap=0.006 gain=-46% lost(all rates)=0.262
+  fixed:32000:refetch  cap=0.008 gain=-9% lost(all rates)=0.083
+SLO 10 s
+  none                 cap=0.009 gain=+0% lost(all rates)=0.000
+  fixed:64000          cap=0.019 gain=+109% lost(all rates)=0.467
+  fixed:64000:rolling  cap=0.009 gain=-3% lost(all rates)=0.234
+  fixed:64000:refetch  cap=0.009 gain=-2% lost(all rates)=0.076
+  fixed:32000          cap=0.037 gain=+329% lost(all rates)=0.720
+  fixed:32000:rolling  cap=0.008 gain=-6% lost(all rates)=0.262
+  fixed:32000:refetch  cap=0.009 gain=-2% lost(all rates)=0.083

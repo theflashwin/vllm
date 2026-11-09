@@ -1,0 +1,86 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/contact-43075/main/ap-CZfz35gK0aln2zMObJgnGp
+Building image im-tfqGQVWIMoWSDBA2pndwtt
+
+=> Step 0: FROM base
+
+=> Step 1: ENV VLLM_USE_FLASHINFER_SAMPLER=0
+
+=> Step 2: ENV VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+
+=> Step 3: ENV PYTHONPATH=/experiment
+
+=> Step 4: ENV HF_HOME=/hf
+Saving image...
+Image saved, took 2.13s
+
+Built image im-tfqGQVWIMoWSDBA2pndwtt in 4.95s
+
+
+✓ Created objects.
+├── ✓ Uploaded /Users/home/Documents/GitHub/vllm-context/research/modal_scan.py
+├── ✓ Uploaded /Users/home/Documents/GitHub/vllm-context/research/kvplace
+└── ✓ Created Function run_scan.
+Traceback (most recent call last):
+  File "/pkg/modal/_runtime/container_io_manager.py", line 987, in handle_input_exception
+    yield
+  File "/pkg/modal/_container_entrypoint.py", line 189, in run_input_sync
+    values = io_context.call_function_sync()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/pkg/modal/_runtime/container_io_manager.py", line 266, in call_function_sync
+    expected_value_or_values = self.finalized_function.callable(*args, **kwargs)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/modal_scan.py", line 83, in run_scan
+    raise RuntimeError("vLLM server exited during startup")
+RuntimeError: vLLM server exited during startup
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /Users/home/Documents/GitHub/vllm-context/research/modal_scan.py:112 in main │
+│                                                                              │
+│   111 ):                                                                     │
+│ ❱ 112 │   run_scan.remote(run, contexts.split(), max_total, repeats)         │
+│   113                                                                        │
+│                                                                              │
+│ /Users/home/.cache/uv/archive-v0/BqYgltjJG1aSgBevquoN7/lib/python3.12/site-p │
+│ ackages/modal/_object.py:49 in wrapped                                       │
+│                                                                              │
+│    48 │   │   await self.hydrate()                                           │
+│ ❱  49 │   │   return await method(self, *args, **kwargs)                     │
+│    50                                                                        │
+│                                                                              │
+│ /Users/home/.cache/uv/archive-v0/BqYgltjJG1aSgBevquoN7/lib/python3.12/site-p │
+│ ackages/modal/_functions.py:2081 in remote                                   │
+│                                                                              │
+│   2080 │   │                                                                 │
+│ ❱ 2081 │   │   return await self._call_function(args, kwargs)                │
+│   2082                                                                       │
+│                                                                              │
+│ /Users/home/.cache/uv/archive-v0/BqYgltjJG1aSgBevquoN7/lib/python3.12/site-p │
+│ ackages/modal/_functions.py:2018 in _call_function                           │
+│                                                                              │
+│   2017 │   │                                                                 │
+│ ❱ 2018 │   │   return await invocation.run_function()                        │
+│   2019                                                                       │
+│                                                                              │
+│ /Users/home/.cache/uv/archive-v0/BqYgltjJG1aSgBevquoN7/lib/python3.12/site-p │
+│ ackages/modal/_functions.py:517 in run_function                              │
+│                                                                              │
+│    516 │   │   │   # No more retries left.                                   │
+│ ❱  517 │   │   │   return await _process_result(                             │
+│    518 │   │   │   │   await_response.output.result, await_response.output.d │
+│                                                                              │
+│ /Users/home/.cache/uv/archive-v0/BqYgltjJG1aSgBevquoN7/lib/python3.12/site-p │
+│ ackages/modal/_utils/function_utils.py:572 in _process_result                │
+│                                                                              │
+│   571 │   │   │                                                              │
+│ ❱ 572 │   │   │   raise exc_with_hints(exc)                                  │
+│   573                                                                        │
+│                                                                              │
+│     ...Remote call to Modal Function (ta-01M6EHBJHEK3WYR6RVZB37ECCR)...      │
+│                                                                              │
+│ /root/modal_scan.py:83 in run_scan                                           │
+│                                                                              │
+│ ❱ 83 raise RuntimeError("vLLM server exited during startup")                 │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+RuntimeError: vLLM server exited during startup

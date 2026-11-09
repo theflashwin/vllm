@@ -1,0 +1,15 @@
+✓ Initialized. View run at 
+https://modal.com/apps/contact-43075/main/ap-eYoLbhCQPdGlZImwA7hfFE
+✓ Created objects.
+├── ✓ Uploaded 
+│   <tmp>
+│   -81c9-7c1cdc9e21f2/scratchpad/datta-wt/research/modal_live.py
+├── ✓ Uploaded 
+│   <tmp>
+│   -81c9-7c1cdc9e21f2/scratchpad/datta-wt/research/kvplace
+└── ✓ Created Function run_live.
+tier_lru: 2940 requests in 3294s; resume TTFT p50=14.655 p90=44.861 p99=60.857 | policy saw 0 hints
+saved <tmp>
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/contact-43075/main/ap-eYoLbhCQPdGlZImwA7hfFE

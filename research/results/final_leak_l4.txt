@@ -1,0 +1,7 @@
+cpu	sec_gbps	policy	predictor	p50	p90	p99	prefetch	wasted
+48000	0.931884	lru	tool	0.946	26.470	67.580	0	0
+48000	0.931884	lru	tool-nf	0.946	26.470	67.580	0	0
+48000	0.931884	gpu_aware	tool	0.893	14.224	62.798	0	0
+48000	0.931884	gpu_aware	tool-nf	0.895	14.224	62.798	0	0
+48000	0.931884	gpu_cpu_aware	tool	0.811	7.889	30.508	0	0
+48000	0.931884	gpu_cpu_aware	tool-nf	1.142	15.265	52.028	0	0

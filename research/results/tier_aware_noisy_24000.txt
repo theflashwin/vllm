@@ -1,0 +1,7 @@
+policy	predictor	resume_ttft_p50	resume_ttft_p90	resume_ttft_p99
+reuse_evict	noisy:0.25	1.0079	3.2638	5.0860
+reuse_evict	noisy:0.5	1.0125	3.2388	4.9016
+reuse_evict	noisy:1.0	1.0216	3.2641	4.9378
+reuse	noisy:0.25	0.4032	2.0311	4.4220
+reuse	noisy:0.5	0.4100	2.1447	4.5408
+reuse	noisy:1.0	0.4184	2.1732	4.4899

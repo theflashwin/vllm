@@ -1,0 +1,6 @@
+(2, 'lru', 'tool-nf') p90 1.89 disk blocks 4468040
+(2, 'reuse_evict', 'tool-nf') p90 35.09 disk blocks 18063416
+(2, 'gpu_cpu_aware', 'tool-nf') p90 35.94 disk blocks 18018436
+(3, 'lru', 'tool-nf') p90 1.93 disk blocks 5012558
+(3, 'reuse_evict', 'tool-nf') p90 64.52 disk blocks 28066776
+(3, 'gpu_cpu_aware', 'tool-nf') p90 62.43 disk blocks 27967776

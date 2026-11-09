@@ -1,0 +1,50 @@
+tl300_sp_s1.jsonl none r=0.006 p50=0.74 p90=9.26 p99=71.52 session=6711s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.008 p50=2.44 p90=53.41 p99=703.32 session=8324s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.01 p50=4.55 p90=199.09 p99=2746.02 session=10377s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.0125 p50=7.07 p90=350.13 p99=2648.86 session=11825s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.015 p50=8.12 p90=480.77 p99=2883.69 session=13113s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.02 p50=10.37 p90=782.58 p99=2485.16 session=14344s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s1.jsonl none r=0.03 p50=15.63 p90=892.75 p99=2313.63 session=15981s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.006 p50=0.60 p90=2.21 p99=11.85 session=6227s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.008 p50=0.87 p90=11.02 p99=134.35 session=6652s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.01 p50=3.09 p90=38.72 p99=1137.27 session=8277s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.0125 p50=4.22 p90=164.46 p99=2277.51 session=9755s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.015 p50=5.92 p90=268.07 p99=2661.68 session=10792s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.02 p50=7.54 p90=519.55 p99=2635.05 session=11965s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s2.jsonl none r=0.03 p50=12.17 p90=713.46 p99=2313.55 session=13518s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.006 p50=0.65 p90=3.48 p99=27.28 session=13080s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.008 p50=1.36 p90=27.07 p99=278.49 session=13865s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.01 p50=3.66 p90=119.37 p99=1456.89 session=15724s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.0125 p50=4.84 p90=299.94 p99=2577.93 session=17336s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.015 p50=6.68 p90=504.09 p99=2576.66 session=18496s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.02 p50=7.96 p90=713.73 p99=2599.47 session=19924s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s3.jsonl none r=0.03 p50=10.28 p90=876.30 p99=2119.53 session=21291s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.006 p50=0.60 p90=3.49 p99=25.92 session=11339s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.008 p50=0.93 p90=16.52 p99=195.52 session=11896s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.01 p50=1.71 p90=40.01 p99=668.50 session=13055s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.0125 p50=3.75 p90=143.84 p99=1353.94 session=14358s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.015 p50=4.79 p90=268.75 p99=1842.35 session=15548s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.02 p50=6.02 p90=383.55 p99=2794.29 session=17012s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s4.jsonl none r=0.03 p50=8.91 p90=686.44 p99=2377.16 session=18301s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.006 p50=0.67 p90=5.59 p99=37.74 session=8846s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.008 p50=3.29 p90=44.38 p99=541.73 session=10409s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.01 p50=5.63 p90=216.10 p99=1927.06 session=12881s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.0125 p50=7.32 p90=352.90 p99=2604.97 session=14678s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.015 p50=8.15 p90=453.70 p99=2863.32 session=15806s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.02 p50=11.14 p90=616.32 p99=2806.46 session=17089s drops=0 sessions=0.00 lost=0.000
+tl300_sp_s5.jsonl none r=0.03 p50=16.29 p90=764.77 p99=2493.85 session=18701s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.006 p50=0.36 p90=0.89 p99=6.10 session=21037s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.008 p50=0.37 p90=0.93 p99=8.89 session=21075s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.01 p50=0.38 p90=0.98 p99=10.52 session=21129s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.0125 p50=0.40 p90=1.21 p99=17.33 session=21234s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.015 p50=0.44 p90=1.88 p99=22.23 session=21343s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.02 p50=0.66 p90=9.33 p99=136.64 session=21955s drops=0 sessions=0.00 lost=0.000
+cat.jsonl none r=0.03 p50=1.45 p90=32.53 p99=182.37 session=22952s drops=0 sessions=0.00 lost=0.000
+
+capacity (sessions/s) at p90 TTFT SLO; gain vs none on the same trace
+SLO 2 s
+  none                 cap=0.003 gain=+0% lost(all rates)=0.000
+SLO 5 s
+  none                 cap=0.006 gain=+0% lost(all rates)=0.000
+SLO 10 s
+  none                 cap=0.009 gain=+0% lost(all rates)=0.000

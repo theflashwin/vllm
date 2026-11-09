@@ -1,0 +1,9 @@
+setting	predictor	lru	gpu_aware	ours	gain_vs_gpu_aware
+l4_slow_disk	tool-nfh	48.91±35.14	45.17±34.85	10.68±2.82	-60.8%±29.1%
+l4_slow_disk	toolres-nfh	48.91±35.14	43.24±34.28	10.76±3.41	-60.5%±26.9%
+small_cpu_7gbps	tool-nfh	4.27±1.14	3.76±0.75	3.35±0.40	-9.9%±6.7%
+small_cpu_7gbps	toolres-nfh	4.27±1.14	3.78±0.79	3.35±0.47	-10.4%±5.2%
+large_cpu_3gbps	tool-nfh	2.27±0.71	2.15±0.49	1.64±0.18	-21.4%±13.1%
+large_cpu_3gbps	toolres-nfh	2.27±0.71	2.29±0.80	1.61±0.17	-25.2%±16.7%
+h100_size	tool-nfh	0.84±0.04	0.83±0.04	0.88±0.04	+6.6%±2.6%
+h100_size	toolres-nfh	0.84±0.04	0.82±0.04	0.84±0.03	+2.2%±1.8%

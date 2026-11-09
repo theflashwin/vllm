@@ -1,0 +1,16 @@
+Installed 29 packages in 34ms
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/contact-43075/main/ap-VEKUslagVSldrW8a7BDPOo
+✓ Created objects.
+├── ✓ Uploaded 
+│   <tmp>
+│   -81c9-7c1cdc9e21f2/scratchpad/datta-wt/research/modal_live.py
+├── ✓ Uploaded 
+│   <tmp>
+│   -81c9-7c1cdc9e21f2/scratchpad/datta-wt/research/kvplace
+└── ✓ Created Function run_live.
+tier_ilru: 2940 requests in 3327s; resume TTFT p50=17.764 p90=42.972 p99=58.826 | policy saw 0 hints
+saved <tmp>
+✓ App completed. View run at 
+https://modal.com/apps/contact-43075/main/ap-VEKUslagVSldrW8a7BDPOo

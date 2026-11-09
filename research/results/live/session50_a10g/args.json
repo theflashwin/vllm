@@ -1,0 +1,14 @@
+{
+ "trace": "traces/live/live50_sq15.jsonl",
+ "gpu": "A10G",
+ "configs": [
+  "tier_lru+session"
+ ],
+ "predictor": "none",
+ "time_scale": 0.1,
+ "gpu_blocks": 3800,
+ "cpu_bytes": 14700000000,
+ "max_len": 32768,
+ "block_size": 16,
+ "deadline_s": 1700.0
+}
