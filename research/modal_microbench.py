@@ -2,6 +2,7 @@
 
     uvx --from modal modal run research/modal_microbench.py --gpu L4
     uvx --from modal modal run research/modal_microbench.py --gpu H100
+    uvx --from modal modal run research/modal_microbench.py --gpu A100
 
 Runs `kvplace.microbench` gpu (pinned H2D/D2H), fs (the container's local
 disk, O_DIRECT reads) and server (prefill rate and decode time from a
@@ -94,6 +95,11 @@ def bench_a10g() -> dict:
 @app.function(gpu="H100", **common)
 def bench_h100() -> dict:
     return _bench("H100")
+
+
+@app.function(gpu="A100-40GB", **common)
+def bench_a100() -> dict:
+    return _bench("A100-40GB")
 
 
 @app.local_entrypoint()

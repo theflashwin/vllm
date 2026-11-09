@@ -54,6 +54,31 @@ SETTINGS = {
         None,
         ("tool-nfh", "tool"),
     ),
+    # A100-40GB (assumed costs): ~20 GB of KV after weights = 22k blocks.
+    "a100_slow_disk": (
+        "traces/tl300_sp_s{seed}.jsonl",
+        22000,
+        24000,
+        0.93,
+        "costs_a100_assumed.json",
+        ("tool-nfh",),
+    ),
+    "a100_3gbps": (
+        "traces/tl300_sp_s{seed}.jsonl",
+        22000,
+        24000,
+        3.0,
+        "costs_a100_assumed.json",
+        ("tool-nfh",),
+    ),
+    "a100_large_cpu": (
+        "traces/tl300_sp_s{seed}.jsonl",
+        22000,
+        72000,
+        0.93,
+        "costs_a100_assumed.json",
+        ("tool-nfh",),
+    ),
 }
 
 

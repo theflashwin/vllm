@@ -8,7 +8,9 @@ from kvplace.sim import (
     ContextPolicy,
     CostModel,
     PolicyConfig,
+    Retention,
     Simulator,
+    SwapPolicy,
     _block_keys,
     chain_position,
     get_policy,
@@ -610,3 +612,120 @@ def test_idle_position_resets_after_a_long_gap_whoever_caused_it():
     ]
     session = Session("s0", 0.0, turns)
     assert [idle_position(session, k, 120.0) for k in range(4)] == [0, 1, 0, 1]
+
+
+def _big_then_small(swap, cpu=10**4):
+    big = Session("big", 0.0, [Turn(800, 5000)])
+    small = Session("small", 5.0, [Turn(160, 1)])
+    return Simulator(
+        [big, small], POLICIES["lru"], "none", SCAN, 60, cpu, 0,
+        gpu_admission=True, swap=swap,
+    )  # fmt: skip
+
+
+def _ttft(sim, sid):
+    return next(r.ttft_s for r in sim.result.records if r.session_id == sid)
+
+
+def test_swap_admits_a_small_request_past_a_decoding_large_one():
+    fifo = _big_then_small(SwapPolicy())
+    swap = _big_then_small(SwapPolicy(order="size", preempt=True))
+    fifo.run(), swap.run()
+    assert swap.result.link["preemptions"] == 1
+    assert _ttft(swap, "small") < _ttft(fifo, "small") / 10
+    assert swap.finish_at["big", 0] > fifo.finish_at["big", 0]
+
+
+def test_swap_resumes_from_cpu_but_recomputes_without_it():
+    with_cpu = _big_then_small(SwapPolicy(order="size", preempt=True))
+    no_cpu = _big_then_small(SwapPolicy(order="size", preempt=True), cpu=0)
+    with_cpu.run(), no_cpu.run()
+    assert with_cpu.result.link["swap_miss_tokens"] == 0
+    assert no_cpu.result.link["swap_miss_tokens"] > 0
+
+
+def test_swap_needs_the_victim_to_be_much_larger():
+    sim = _big_then_small(SwapPolicy(order="size", preempt=True, ratio=100.0))
+    sim.run()
+    assert sim.result.link.get("preemptions", 0) == 0
+
+
+def test_swap_limit_stops_repeated_pausing_of_one_turn():
+    big = Session("big", 0.0, [Turn(800, 5000)])
+    smalls = [Session(f"s{i}", 5.0 + i * 3, [Turn(160, 500)]) for i in range(6)]
+    sim = Simulator(
+        [big, *smalls], POLICIES["lru"], "none", SCAN, 60, 10**4, 0,
+        gpu_admission=True, swap=SwapPolicy(order="size", preempt=True, max_swaps=1),
+    )  # fmt: skip
+    sim.run()
+    assert sim.result.link["preemptions"] == 1
+    assert ("big", 0) in sim.finish_at
+
+
+def test_overdue_request_blocks_backfill():
+    holder = Session("a", 0.0, [Turn(640, 160)])
+    blocked = Session("b", 0.1, [Turn(800, 1)])
+    late = Session("c", 1.0, [Turn(160, 1)])
+
+    def order(reserve_s):
+        sim = Simulator(
+            [holder, blocked, late], POLICIES["lru"], "none", SCAN, 70, 10**4, 0,
+            gpu_admission=True, swap=SwapPolicy(reserve_s=reserve_s),
+        )  # fmt: skip
+        return [r.session_id for r in sim.run().records]
+
+    assert order(0.5) == ["a", "b", "c"]
+    assert order(10**6) == ["a", "c", "b"]
+
+
+def _retained(gap_s, plan, turns=2):
+    tools = [Turn(1600, 10, "Bash", gap_s) for _ in range(turns - 1)]
+    session = Session("s0", 0.0, [*tools, Turn(50, 10)])
+    sim = Simulator(
+        [session],
+        get_policy("lru"),
+        "none",
+        CostModel(),
+        10_000,
+        10_000,
+        0,
+        gpu_admission=True,
+        retention={"s0": plan},
+    )
+    return sim, sim.run().records
+
+
+def test_a_read_after_the_ttl_misses_and_one_before_hits():
+    assert _retained(100.0, Retention(ttl_s=300.0))[1][1].miss_blocks <= 4
+    assert _retained(400.0, Retention(ttl_s=300.0))[1][1].gpu_hit_blocks == 0
+
+
+def test_keepalive_outlives_the_ttl_at_the_price_of_requests():
+    plan = Retention(ttl_s=300.0, ping_s=270.0, ping_cap_s=3600.0, ping_tail=False)
+    sim, records = _retained(1000.0, plan)
+    assert records[1].gpu_hit_blocks > 0
+    assert sim.pings == 3
+    assert sim.result.counters.hint_requests == 3
+
+
+def test_keepalive_stops_at_its_cap_so_the_cache_still_expires():
+    plan = Retention(ttl_s=300.0, ping_s=270.0, ping_cap_s=600.0)
+    sim, records = _retained(2000.0, plan)
+    assert records[1].gpu_hit_blocks == 0
+    # Two pings during the gap and two more after the last response.
+    assert sim.pings == 4
+
+
+def test_touch_only_keepalive_keeps_the_cache_without_running_requests():
+    plan = Retention(ttl_s=300.0, ping_s=270.0, ping_touch=True, ping_tail=False)
+    sim, records = _retained(1000.0, plan)
+    assert records[1].gpu_hit_blocks > 0
+    assert sim.pings == 3
+    assert sim.result.counters.hint_requests == 0
+
+
+def test_a_ping_that_finds_expired_blocks_still_leaves_them_to_expire():
+    plan = Retention(ttl_s=300.0, ping_s=400.0, ping_cap_s=500.0)
+    sim, _ = _retained(1.0, plan)
+    assert sim.pings == 1
+    assert len(sim.cpu) == 0

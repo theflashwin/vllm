@@ -537,6 +537,43 @@ class ContextPolicy:
     agent_only: bool = False
 
 
+@dataclass(frozen=True)
+class SwapPolicy:
+    """Memory-aware admission, optionally pausing large running requests.
+
+    Attributes:
+        order: Admission order: "fifo", "size" (smallest context) or "oracle"
+            (smallest context x output tokens).
+        preempt: Pause running requests to admit a waiting one.
+        trigger_s: Pause only for a request that has waited this long.
+        ratio: A victim's context must be at least this many times the waiter's.
+        max_swaps: Pauses allowed per turn.
+        reserve_s: After this wait a request is admitted next: nothing may pass it.
+    """
+
+    order: str = "fifo"
+    preempt: bool = False
+    trigger_s: float = 1.0
+    ratio: float = 2.0
+    max_swaps: int = 2
+    reserve_s: float = 30.0
+
+
+@dataclass(frozen=True)
+class Retention:
+    """A client's cache plan: blocks expire `ttl_s` after the last read, and an
+    optional keepalive reads the prefix every `ping_s` until `ping_cap_s` after
+    the last response. `ping_tail`: keep pinging after the session's last turn
+    (a client cannot tell a dead session from an idle one). `ping_touch`: the
+    provider refreshes the TTL without running a request."""
+
+    ttl_s: float = 300.0
+    ping_s: float | None = None
+    ping_cap_s: float = 3600.0
+    ping_tail: bool = True
+    ping_touch: bool = False
+
+
 def _pct(xs: list[float], p: float) -> float:
     if not xs:
         return 0.0
@@ -604,7 +641,22 @@ class Simulator:
         queue_order: str = "fifo",
         chain_aging_s: float | None = None,
         idle_reset_s: float = 120.0,
+        swap: SwapPolicy | None = None,
+        retention: dict[str, Retention] | None = None,
     ):
+        self.swap = swap
+        self._waiting_since: dict[tuple[str, int], float] = {}
+        self._swap_counts: Counter[tuple[str, int]] = Counter()
+        self._swap_output: dict[int, int] = {}
+        if retention and "lru" not in (policy.gpu_policy, policy.cpu_policy):
+            raise ValueError("retention needs LRU tiers")
+        self.retention = retention
+        self._read_gen: Counter[str] = Counter()
+        self._last_response: dict[str, float] = {}
+        self._occupancy_at = 0.0
+        self.pings = 0
+        self.ping_tokens = 0
+        self.occupancy_block_s = {"gpu": 0.0, "cpu": 0.0, "sec": 0.0}
         # "memtime": oracle shortest memory x output first, with backfilling.
         self.queue_order = queue_order
         self.chain_aging_s = chain_aging_s
@@ -725,6 +777,11 @@ class Simulator:
             self._push(s.start_s * self.time_scale, "arrive", s.session_id, 0)
         while self._events:
             t, _, kind, sid, k = heapq.heappop(self._events)
+            if self.retention:
+                self._note_occupancy(t)
+            if kind == "expire":
+                self._expire(t, self.sessions[sid], k)
+                continue
             if kind == "sec_write":
                 self._book_sec_write(t, self._write_jobs.pop(k))
                 self.result.link["sim_end_s"] = t
@@ -749,7 +806,12 @@ class Simulator:
             r = self._use_replica(sid, k, kind == "arrive")
             if kind == "arrive":
                 self._turn[sid] = k
+                self._read_gen[sid] += 1
                 self._submit(t, kind, self.sessions[sid], k)
+            elif kind == "swap_check":
+                self._drain(t)
+            elif kind == "ping":
+                self._ping(t, self.sessions[sid], k)
             elif kind == "hint_request":
                 self._submit(t, kind, self.sessions[sid], k)
             elif kind == "restored":
@@ -973,9 +1035,69 @@ class Simulator:
             return
         self._after_response(s, k, finish, hint, post)
 
+    def _note_occupancy(self, now: float) -> None:
+        dt = now - self._occupancy_at
+        self._occupancy_at = now
+        used = self.occupancy_block_s
+        used["gpu"] += dt * sum(len(st["gpu"]) for st in self._replicas)
+        used["cpu"] += dt * len(self.cpu)
+        used["sec"] += dt * len(self.sec)
+
+    def _retain_until(self, now: float, s: Session, k: int) -> None:
+        """A read refreshes the TTL; the blocks expire unless another read comes."""
+        self._read_gen[s.session_id] += 1
+        ttl_s = self.retention[s.session_id].ttl_s
+        if ttl_s != math.inf:
+            self._push(
+                now + ttl_s, "expire", s.session_id, self._read_gen[s.session_id]
+            )
+
+    def _expire(self, now: float, s: Session, gen: int) -> None:
+        sid = s.session_id
+        if gen != self._read_gen[sid]:
+            return
+        k = self._turn[sid]
+        keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
+        keys += [(f"{sid}:hint", j) for j in range(k + 1)]
+        for key in keys:
+            if key[0] == SHARED:
+                continue
+            for st in self._replicas:
+                if key not in st["pins"]:
+                    st["gpu"].blocks.pop(key, None)
+            self.cpu.blocks.pop(key, None)
+            self.sec.blocks.pop(key, None)
+        self.result.link["sim_end_s"] = now
+
+    def _schedule_ping(self, now: float, s: Session, k: int) -> None:
+        plan = self.retention[s.session_id]
+        last = k + 1 == len(s.turns)
+        if plan.ping_s is None or (last and not plan.ping_tail):
+            return
+        if now + plan.ping_s - self._last_response[s.session_id] <= plan.ping_cap_s:
+            self._push(now + plan.ping_s, "ping", s.session_id, k)
+
+    def _ping(self, now: float, s: Session, k: int) -> None:
+        if self._turn[s.session_id] != k:
+            return
+        self.pings += 1
+        self.ping_tokens += s.prompt_lengths()[k]
+        self._retain_until(now, s, k)
+        if self.retention[s.session_id].ping_touch:
+            keys = _block_keys(s, s.prompt_lengths()[k], self.cost.block_tokens)
+            self.cpu.touch(keys, now)
+            self.sec.touch(keys, now)
+            self._schedule_ping(now, s, k)
+        else:
+            self._submit(now, "hint_request", s, k)
+
     def _after_response(
         self, s: Session, k: int, finish: float, hint: ReuseHint | None, post: bool
     ) -> None:
+        if self.retention:
+            self._last_response[s.session_id] = finish
+            self._retain_until(finish, s, k)
+            self._schedule_ping(finish, s, k)
         lead = self.policy.warmup_lead_s
         if self.server_hints and post and hint is not None and lead is None:
             self._pending_hints[s.session_id, k] = hint
@@ -1025,6 +1147,11 @@ class Simulator:
             self._dispatch(now, kind, s, k, now)
             return
         self._waiting.append((kind, s, k, now))
+        if self.swap:
+            self._waiting_since[s.session_id, k] = now
+            if self.swap.preempt:
+                self._push(now + self.swap.trigger_s, "swap_check", s.session_id, k)
+            self._push(now + self.swap.reserve_s, "swap_check", s.session_id, k)
         self._apply_context_policy(now)
         self._drain(now)
 
@@ -1038,6 +1165,9 @@ class Simulator:
 
     def _drain(self, now: float) -> None:
         """Admit waiting requests in FIFO order while they fit."""
+        if self.swap:
+            self._drain_swap(now)
+            return
         if self.queue_order == "memtime":
             self._drain_memtime(now)
             return
@@ -1058,6 +1188,90 @@ class Simulator:
                 return
             self._waiting.popleft()
             self._dispatch(now, kind, s, k, arrived)
+
+    def _swap_size(self, item: tuple) -> int:
+        _, s, k, _ = item
+        prompt = s.prompt_lengths()[k]
+        if self.swap.order == "oracle":
+            return prompt * max(1, s.turns[k].output_tokens)
+        return prompt
+
+    def _drain_swap(self, now: float) -> None:
+        since = self._waiting_since
+        key = lambda i: since[i[1].session_id, i[2]]
+        overdue = sorted(
+            (
+                i
+                for i in self._waiting
+                if now - since[i[1].session_id, i[2]] >= self.swap.reserve_s
+            ),
+            key=key,
+        )
+        rest = [i for i in self._waiting if i not in overdue]
+        if self.swap.order == "fifo":
+            rest.sort(key=key)
+        else:
+            rest.sort(key=lambda i: (self._swap_size(i), key(i)))
+        for item in overdue + rest:
+            kind, s, k, arrived = item
+            blocks = self._request_blocks(kind, s, k)
+            if not self._fits(*blocks) and self.swap.preempt:
+                if now - since[s.session_id, k] >= self.swap.trigger_s:
+                    self._swap_out_for(now, item, *blocks)
+            if self._fits(*blocks):
+                self._waiting.remove(item)
+                since.pop((s.session_id, k))
+                self._dispatch(now, kind, s, k, arrived)
+            elif item in overdue:
+                return
+
+    def _swap_out_for(
+        self, now: float, item: tuple, keys: list[BlockKey], extra: int
+    ) -> None:
+        """Pause the largest running requests if that frees enough for `item`."""
+        st = self._replicas[self._r]
+        waiter = item[1].prompt_lengths()[item[2]]
+        new = sum(1 for key in dict.fromkeys(keys) if key not in self._pins)
+        need = len(self._pins) + self._extra + new + extra - self.admission_blocks
+        oracle = self.swap.order == "oracle"
+        st_virtual = st["dec_virtual"]
+
+        def weight(entry: tuple) -> float:
+            prompt = self._decodes[entry[1]][6]
+            return prompt * (entry[0] - st_virtual) if oracle else prompt
+
+        victims = []
+        for entry in sorted(st["dec_heap"], key=weight, reverse=True):
+            if need <= 0:
+                break
+            _, s, k, _, _, _, prompt, hold_id = self._decodes[entry[1]]
+            if prompt < self.swap.ratio * waiter:
+                continue
+            if self._swap_counts[s.session_id, k] >= self.swap.max_swaps:
+                continue
+            victims.append(entry)
+            need -= len(self._holds[hold_id][1]) + self._holds[hold_id][2]
+        if need > 0:
+            return
+        self._decode_advance(st, now)
+        link = self.result.link
+        for entry in victims:
+            target, rid = entry
+            st["dec_heap"].remove(entry)
+            r, s, k, hint, post, _, prompt_len, hold_id = self._decodes[rid]
+            left = max(1e-3, target - st["dec_virtual"])
+            self._swap_output[rid] = max(0, s.turns[k].output_tokens - math.ceil(left))
+            self._decodes[rid] = (r, s, k, hint, post, left, prompt_len, 0)
+            st["dec_ctx"] -= prompt_len
+            self._unpin(hold_id)
+            self._preempted[s.session_id, k] = rid
+            self._swap_counts[s.session_id, k] += 1
+            self._waiting.append(("resume", s, k, self._arrived_of[rid]))
+            self._waiting_since[s.session_id, k] = now
+            self._push(now + self.swap.reserve_s, "swap_check", s.session_id, k)
+        heapq.heapify(st["dec_heap"])
+        self._decode_schedule(st, self._r, now)
+        link["preemptions"] = link.get("preemptions", 0) + len(victims)
 
     def _drain_memtime(self, now: float) -> None:
         def memory_time(item: tuple) -> int:
@@ -1173,7 +1387,16 @@ class Simulator:
         hold_id = self._hold(None, *self._request_blocks("resume", s, k))
         self.gpu.insert(keys, now)
         self._decodes[rid] = (r, s, k, hint, post, left, prompt_len, hold_id)
-        ready = self.gpu_free_at + cost.cpu_to_gpu_s(n_slow)
+        # Generated KV is not in the tiers: it was copied out and comes back.
+        out = -(-self._swap_output.pop(rid, 0) // cost.block_tokens)
+        ready = (
+            self.gpu_free_at + cost.cpu_to_gpu_s(n_slow) + 2 * cost.cpu_to_gpu_s(out)
+        )
+        link = self.result.link
+        link["swap_reload_blocks"] = (
+            link.get("swap_reload_blocks", 0) + n_slow + 2 * out
+        )
+        link["swap_miss_tokens"] = link.get("swap_miss_tokens", 0) + uncached
         self._push(ready, "decode_start", "", rid)
 
     def _hold(self, finish: float | None, keys: list[BlockKey], extra: int) -> int:
@@ -1443,6 +1666,11 @@ class Simulator:
                 self.gpu.insert(inflight[2], now)
 
     def _hint_update(self, now: float, s: Session, k: int) -> None:
+        # A ping that queued may have re-created expired blocks. One at a time:
+        # the client sends the next only after this one returns.
+        if self.retention and self._turn[s.session_id] == k:
+            self._retain_until(now, s, k)
+            self._schedule_ping(now, s, k)
         hint = self._pending_hints.pop((s.session_id, k), None)
         if hint is None or k < self._latest_turn.get(s.session_id, k):
             return
