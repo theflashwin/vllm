@@ -3,9 +3,13 @@
 A hint says: "after this request finishes, the same session will need this
 prefix again in about `expected_reuse_s` seconds" (or never, if `final`).
 
-Two transports carry the same payload:
+Three transports carry the same payload:
   * HTTP: `kv_transfer_params["kvplace"] = {...}` — supported by the OpenAI
-    server today, so this is what the replay client uses.
+    server today, so this is what the replay client uses on each turn.
+  * UDP: one datagram to the address in `KVPLACE_HINT_ADDR`, which the policy
+    binds. Carries an estimate that is only known after the response (the
+    tool the agent called) without sending a second request to the engine.
+    Client and server must share a host.
   * Python engine API: a `KvHintsEnvelope` action with
     `action_type == ACTION_TYPE` (vllm/v1/kv_hints/protocol.py). Not yet
     exposed over HTTP.
@@ -14,12 +18,14 @@ This module must stay importable without vLLM (the simulator uses it).
 """
 
 import bisect
+import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
 HINT_KEY = "kvplace"
 ACTION_TYPE = "kvplace.reuse_horizon"
 ACTION_VERSION = "1"
+HINT_ADDR_ENV = "KVPLACE_HINT_ADDR"
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,27 @@ def _from_payload(payload: Any) -> ReuseHint | None:
             else None
         ),
     )
+
+
+def parse_addr(addr: str) -> tuple[str, int]:
+    """`host:port` or `port`; the host defaults to loopback."""
+    host, _, port = addr.rpartition(":")
+    return host or "127.0.0.1", int(port)
+
+
+def encode_datagram(hint: ReuseHint, sent_s: float) -> bytes:
+    """`sent_s` is wall-clock time, so the receiver can subtract the delay
+    before it reads the datagram."""
+    return json.dumps({"sent_s": sent_s, HINT_KEY: asdict(hint)}).encode()
+
+
+def decode_datagram(data: bytes) -> tuple[ReuseHint, float] | None:
+    try:
+        msg = json.loads(data)
+        hint = _from_payload(msg.get(HINT_KEY))
+        return None if hint is None else (hint, float(msg["sent_s"]))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
 
 
 def _residual(raw: Any) -> tuple[tuple[float, float], ...] | None:

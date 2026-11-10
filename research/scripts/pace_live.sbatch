@@ -25,7 +25,8 @@
 # Check a node without starting a server:
 #   TRACE=... DRY_RUN=1 srun --gres=gpu:1 --mem=64G bash research/scripts/pace_live.sbatch
 #
-# Defaults reproduce results/live/live35_stable_a10g. Arms run in CONFIGS order;
+# Defaults match results/live/live35_stable_a10g except for the hint transport
+# (add HINT_PORT= to reproduce it exactly). Arms run in CONFIGS order;
 # swap the order between repeats. results/ is gitignored: commit with `git add -f`.
 # The replay writes its rows only when an arm ends, so a job killed at the
 # walltime loses that arm. Set DEADLINE_S (per arm) so all arms fit in --time.
@@ -48,6 +49,9 @@ export OUT=${OUT:-research/results/live/$RUN}
 export FS_DIR=${FS_DIR:-${TMPDIR:-/tmp}/kvplace_fs_$job}
 # GPU nodes are shared, so a fixed port can collide with another job.
 export PORT=${PORT:-$((20000 + job % 20000))}
+# Post-response hints go to the policy by UDP. HINT_PORT= (empty) sends them
+# as hint-only requests through the engine instead, as runs before Nov 10 did.
+export HINT_PORT=${HINT_PORT-$((PORT + 1))}
 export HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-1800}
 export KVPLACE_LOG_HINTS=1
 VENV=${VENV:-$PWD/.venv}
@@ -89,6 +93,7 @@ rm -f "$probe"
   echo "direct read: $read_back"
   echo "configs: $CONFIGS  predictor: $PREDICTOR  time_scale: $TIME_SCALE"
   echo "gpu_blocks: $GPU_BLOCKS  cpu_bytes: $CPU_BYTES  port: $PORT"
+  echo "hint transport: ${HINT_PORT:+udp port }${HINT_PORT:-request}"
 } | tee "$OUT/node.txt"
 
 if [[ -n ${DRY_RUN:-} ]]; then

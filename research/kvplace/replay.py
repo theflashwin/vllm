@@ -7,9 +7,10 @@ prompt contains synthetic stand-ins for turn k's output, so those tokens are
 recomputed — the simulator models them the same way.
 
 With a post-response predictor (e.g. `tool`), each turn's request carries
-its session identity without a reuse estimate. A hint-only request (same
-prefix + one padding block, max_tokens=1) updates the estimate right after
-the response, once the agent knows its tool.
+its session identity without a reuse estimate. The estimate follows right
+after the response, once the agent knows its tool: as a UDP datagram to the
+policy with `--hint-addr`, otherwise as a hint-only request (same prefix + one
+padding block, max_tokens=1), which costs the engine a request per turn.
 
 Writes one CSV row per request plus a JSON delta of the server's Prometheus
 counters (offload bytes/time, prefix-cache hits) over the run.
@@ -26,6 +27,7 @@ import csv
 import json
 import random
 import re
+import socket
 import time
 import zlib
 from dataclasses import replace
@@ -33,7 +35,7 @@ from pathlib import Path
 
 import aiohttp
 
-from kvplace.hints import ReuseHint
+from kvplace.hints import ReuseHint, encode_datagram, parse_addr
 from kvplace.predictors import get_predictor, is_post_response
 from kvplace.sim import chain_position
 from kvplace.trace import Session, read_trace
@@ -106,7 +108,23 @@ async def send_hint_request(http, args, model, prompt, hint, row) -> None:
     row["e2e_s"] = time.time() - sent
 
 
-async def run_session(http, args, model, session, shared, predictor, t0, rows):
+def hint_sender(addr: str | None):
+    """Send a post-response hint to the policy's UDP address. Nothing listens
+    under a stock policy, and the datagram is dropped."""
+    if not addr:
+        return None
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    target = parse_addr(addr)
+
+    def send(hint: ReuseHint) -> None:
+        sock.sendto(encode_datagram(hint, time.time()), target)
+
+    return send
+
+
+async def run_session(
+    http, args, model, session, shared, predictor, t0, rows, send_hint=None
+):
     await asyncio.sleep(max(0.0, t0 + session.start_s * args.time_scale - time.time()))
     tokens = session_tokens(session, shared)
     lengths = session.prompt_lengths()
@@ -166,7 +184,22 @@ async def run_session(http, args, model, session, shared, predictor, t0, rows):
         if post:
             # The agent now knows its tool call (or that it is done).
             post_hint = scale_hint(predictor(session, k, gaps), args.time_scale)
-            if post_hint is not None:
+            if post_hint is not None and send_hint is not None:
+                send_hint(post_hint)
+                rows.append(
+                    {
+                        **row,
+                        "kind": "hint_udp",
+                        "sent_s": time.time() - t0,
+                        "ttft_s": None,
+                        "e2e_s": None,
+                        "cached_tokens": None,
+                        "output_tokens": None,
+                        "hint_reuse_s": post_hint.expected_reuse_s,
+                        "hint_final": post_hint.final,
+                    }
+                )
+            elif post_hint is not None:
                 prompt = tokens[: lengths[k]] + hint_padding(
                     session.session_id, k, lengths[k], args.block_size
                 )
@@ -219,10 +252,13 @@ async def main_async(args) -> None:
             model = args.model or (await r.json())["data"][0]["id"]
         before = await scrape_metrics(http, args.url)
         rows: list[dict] = []
+        send_hint = hint_sender(args.hint_addr)
         t0 = time.time()
         tasks = [
             asyncio.create_task(
-                run_session(http, args, model, s, shared, predictor, t0, rows)
+                run_session(
+                    http, args, model, s, shared, predictor, t0, rows, send_hint
+                )
             )
             for s in sessions
         ]
@@ -252,10 +288,13 @@ async def main_async(args) -> None:
     )
     if resume:
         p = lambda q: resume[int(q * (len(resume) - 1))]  # noqa: E731
+        udp = sum(r["kind"] == "hint_udp" for r in rows)
         print(
-            f"{len(rows)} requests in {wall:.0f}s; resume TTFT "
+            f"{len(rows) - udp} requests in {wall:.0f}s; resume TTFT "
             f"p50={p(0.5):.3f} p90={p(0.9):.3f} p99={p(0.99):.3f}"
         )
+        if udp:
+            print(f"{udp} hints sent by UDP")
 
 
 def main() -> None:
@@ -276,6 +315,11 @@ def main() -> None:
         type=int,
         default=16,
         help="offload block_size (tokens); hint-only requests pad to it",
+    )
+    p.add_argument(
+        "--hint-addr",
+        help="host:port the policy binds (KVPLACE_HINT_ADDR); send post-response "
+        "hints there by UDP instead of as hint-only requests",
     )
     p.add_argument(
         "--chain-priority",

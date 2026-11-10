@@ -11,7 +11,9 @@ Load out-of-tree (PYTHONPATH must include research/):
 Eviction prefers chunks whose owning session has the farthest predicted next
 use (see `kvplace.sim.ReuseAwareTier` for the same rule in the simulator),
 falling back to LRU order within a session and for unhinted chunks. Hints
-arrive per request via `kvplace.hints`.
+arrive per request via `kvplace.hints`. With `KVPLACE_HINT_ADDR=host:port` set,
+the policy also binds that UDP address and reads post-response estimates from
+it, so a client need not send a hint-only request through the engine.
 
 Evictable chunks are indexed per owner (session, shared, or unowned) in lazy
 LRU heaps, so `evict` scores owners rather than chunks. The policy runs inside
@@ -21,12 +23,19 @@ vLLM's scheduler step; scoring every chunk on each call stalled the scheduler.
 import heapq
 import math
 import os
+import socket
 import time
 from collections.abc import Iterable, Sequence
 
 from typing_extensions import override
 
-from kvplace.hints import ReuseHint, parse_hint
+from kvplace.hints import (
+    HINT_ADDR_ENV,
+    ReuseHint,
+    decode_datagram,
+    parse_addr,
+    parse_hint,
+)
 from vllm.logger import init_logger
 from vllm.v1.kv_offload.base import OffloadKey, ReqContext
 from vllm.v1.kv_offload.cpu.policies.base import ChunkStatus
@@ -42,8 +51,21 @@ _UNOWNED = object()
 _UNOWNED_OLDEST = object()
 _UNOWNED_NEWEST = object()
 # Set KVPLACE_LOG_HINTS=1 to log every hint the policy receives (use it to
-# confirm hint-only requests reach the policy on a real server).
+# confirm post-response hints reach the policy on a real server).
 _LOG_HINTS = os.environ.get("KVPLACE_LOG_HINTS") == "1"
+
+
+def _open_hint_socket() -> socket.socket | None:
+    addr = os.environ.get(HINT_ADDR_ENV)
+    if not addr:
+        return None
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Datagrams wait here between policy calls; the kernel may cap this.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
+    sock.bind(parse_addr(addr))
+    sock.setblocking(False)
+    logger.info("kvplace hints on udp %s:%d", *sock.getsockname())
+    return sock
 
 
 class ReuseAwareCachePolicy(LRUCachePolicy):
@@ -52,6 +74,10 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
     def __init__(self, cache_capacity: int, clock=time.monotonic):
         super().__init__(cache_capacity)
         self._clock = clock
+        self._wall = time.time
+        self._hint_sock = _open_hint_socket()
+        # Session -> turn of its latest datagram estimate.
+        self._estimate_turn: dict[str, int] = {}
         # Key -> session id, or _SHARED once a second session uses it.
         self._owner: dict[OffloadKey, object] = {}
         self._deadline: dict[str, float] = {}
@@ -82,6 +108,39 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
                 continue
             if key in self._evictable:
                 self._push_evictable(key)
+
+    def _update_session(self, hint: ReuseHint, now: float) -> None:
+        sid = hint.session_id
+        if hint.turn < self._latest_turn.get(sid, -1):
+            return
+        self._latest_turn[sid] = hint.turn
+        self._last_use[sid] = now
+        self._deadline.pop(sid, None)
+        if hint.final:
+            self._final.add(sid)
+        else:
+            self._final.discard(sid)
+            if hint.expected_reuse_s is not None:
+                self._deadline[sid] = now + hint.expected_reuse_s
+
+    def _drain_hints(self) -> None:
+        if self._hint_sock is None:
+            return
+        while True:
+            try:
+                data = self._hint_sock.recv(65536)
+            except BlockingIOError:
+                return
+            if (decoded := decode_datagram(data)) is None:
+                continue
+            hint, sent_s = decoded
+            self.hints_received += 1
+            if _LOG_HINTS:
+                logger.info("kvplace hint %s (udp)", hint)
+            delay = max(0.0, self._wall() - sent_s)
+            self._update_session(hint, self._clock() - delay)
+            sid = hint.session_id
+            self._estimate_turn[sid] = max(hint.turn, self._estimate_turn.get(sid, -1))
 
     def _owner_of(self, key: OffloadKey) -> object:
         return self._owner.get(key, _UNOWNED)
@@ -174,23 +233,16 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         reused_keys: set[OffloadKey],
         req_context: ReqContext,
     ) -> None:
+        self._drain_hints()
         hint = parse_hint(req_context)
         if hint is not None:
             self.hints_received += 1
             if _LOG_HINTS:
                 logger.info("kvplace hint %s (req %s)", hint, req_context.req_id)
-            sid = hint.session_id
-            if hint.turn >= self._latest_turn.get(sid, -1):
-                self._latest_turn[sid] = hint.turn
-                now = self._clock()
-                self._last_use[sid] = now
-                self._deadline.pop(sid, None)
-                if hint.final:
-                    self._final.add(sid)
-                else:
-                    self._final.discard(sid)
-                    if hint.expected_reuse_s is not None:
-                        self._deadline[sid] = now + hint.expected_reuse_s
+            # A turn can be reported finished after its datagram arrived; its
+            # estimate-free hint must not clear that estimate.
+            if self._estimate_turn.get(hint.session_id) != hint.turn:
+                self._update_session(hint, self._clock())
             for keys in key_groups:
                 self._observe(keys, hint)
         super().on_request_finished(
@@ -212,6 +264,7 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
         self._final.clear()
         self._last_use.clear()
         self._latest_turn.clear()
+        self._estimate_turn.clear()
         self._by_owner.clear()
         self._entries = 0
 
@@ -221,6 +274,7 @@ class ReuseAwareCachePolicy(LRUCachePolicy):
     ) -> list[tuple[OffloadKey, ChunkStatus]] | None:
         if n == 0:
             return []
+        self._drain_hints()
         now = self._clock()
         selected: list[tuple[object, tuple[float, int, OffloadKey]]] = []
         selected_keys: set[OffloadKey] = set()

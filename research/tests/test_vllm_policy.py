@@ -1,7 +1,10 @@
 """ReuseAwareCachePolicy driven through vLLM's real CPUOffloadingManager."""
 
+import select
+import socket
+
 import pytest
-from kvplace.hints import ReuseHint
+from kvplace.hints import HINT_ADDR_ENV, ReuseHint, encode_datagram
 
 from vllm.v1.kv_offload.base import LookupResult, ReqContext, make_offload_key
 from vllm.v1.kv_offload.cpu.manager import CPUOffloadingManager
@@ -35,6 +38,32 @@ def setup():
     clock = FakeClock()
     manager._policy._clock = clock
     return manager, clock
+
+
+@pytest.fixture
+def udp_setup(monkeypatch, setup):
+    """A policy bound to a free UDP port, and a `send(hint, age_s)` that
+    returns once the datagram is readable."""
+    monkeypatch.setenv(HINT_ADDR_ENV, "127.0.0.1:0")
+    _, clock = setup
+    manager = CPUOffloadingManager(
+        num_chunks=4,
+        cache_policy="ReuseAwareCachePolicy",
+        cache_policy_module_path="kvplace.vllm_policy",
+        store_threshold=0,
+    )
+    policy = manager._policy
+    policy._clock = policy._wall = clock
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def send(hint: ReuseHint, age_s: float = 0.0) -> None:
+        data = encode_datagram(hint, clock.t - age_s)
+        client.sendto(data, policy._hint_sock.getsockname())
+        assert select.select([policy._hint_sock], [], [], 5.0)[0]
+
+    yield manager, clock, send
+    client.close()
+    policy._hint_sock.close()
 
 
 def run_request(manager, req_ctx, ks):
@@ -149,3 +178,45 @@ def test_storeless_request_hint_needs_on_new_request(setup):
     manager.on_new_request(hint_ctx)  # CPU-only spec does call this
     manager.on_request_finished(hint_ctx)
     assert policy.hints_received == 1
+
+
+def test_udp_hint_updates_deadline_without_a_request(udp_setup):
+    """A datagram replaces the hint-only request: no store, no padding block."""
+    manager, _, send = udp_setup
+    run_request(manager, ctx("a0", ReuseHint("a", 0)), keys(1, 2))
+    run_request(manager, ctx("b0", ReuseHint("b", 0, 300.0)), keys(3))
+    send(ReuseHint("a", 0, final=True))
+
+    out = run_request(manager, ctx("c0", None), keys(4, 5))
+
+    assert out.evicted_keys[0] in keys(1, 2)
+    assert manager.lookup(keys(3)[0], ReqContext(req_id="x")) is LookupResult.HIT
+
+
+def test_udp_hint_survives_its_turn_finishing_late(udp_setup):
+    """The engine can report a turn finished after its datagram arrived; the
+    turn's estimate-free hint must not clear the estimate."""
+    manager, _, send = udp_setup
+    a0 = ctx("a0", ReuseHint("a", 0))
+    assert manager.prepare_store(keys(1, 2), a0) is not None
+    manager.complete_store(keys(1, 2), a0)
+    run_request(manager, ctx("b0", ReuseHint("b", 0, 100.0)), keys(3))
+    send(ReuseHint("a", 0, 300.0))
+    manager.on_request_finished(a0)
+
+    out = run_request(manager, ctx("c0", None), keys(4, 5))
+
+    assert out.evicted_keys[0] in keys(1, 2)
+
+
+def test_udp_hint_deadline_counts_from_send_time(udp_setup):
+    """The policy reads datagrams on its next call, which can be much later."""
+    manager, clock, send = udp_setup
+    clock.t = 100.0
+    run_request(manager, ctx("a0", ReuseHint("a", 0)), keys(1, 2))
+    run_request(manager, ctx("b0", ReuseHint("b", 0, 50.0)), keys(3))
+    send(ReuseHint("a", 0, 60.0), age_s=20.0)
+
+    out = run_request(manager, ctx("c0", None), keys(4, 5))
+
+    assert out.evicted_keys == keys(3)

@@ -124,6 +124,7 @@ def run_live(
     block_size: int,
     run: str,
     deadline_s: float,
+    hint_port: int,
 ) -> dict[str, dict[str, bytes]]:
     trace_path = Path("/tmp/trace.jsonl")
     trace_path.write_text(trace)
@@ -146,8 +147,14 @@ def run_live(
             cmd += ["--scheduling-policy", "priority"]
         if (kv := kv_config(cfg, block_size, cpu_bytes)) is not None:
             cmd += ["--kv-transfer-config", kv]
+        # With a hint port, post-response hints reach the policy by UDP
+        # instead of as hint-only requests through the engine.
+        hint_addr = f"127.0.0.1:{hint_port}" if hint_port else None
+        env = {**os.environ, **({"KVPLACE_HINT_ADDR": hint_addr} if hint_addr else {})}
         with open(out / "server.log", "w") as log:
-            server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+            server = subprocess.Popen(
+                cmd, stdout=log, stderr=subprocess.STDOUT, env=env
+            )
             try:
                 wait_healthy(server)
                 hf_cache.commit()
@@ -159,6 +166,7 @@ def run_live(
                      "--predictor", predictor, "--time-scale", str(time_scale),
                      "--block-size", str(block_size), "--out", str(out),
                      *(["--deadline-s", str(deadline_s)] if deadline_s else []),
+                     *(["--hint-addr", hint_addr] if hint_addr else []),
                      *([f"--{order}-priority"] if order else [])],
                     capture_output=True, text=True,
                 )  # fmt: skip
@@ -187,6 +195,7 @@ def main(
     block_size: int = 16,
     run: str = "",
     deadline_s: float = 0.0,
+    hint_port: int = 0,
 ):
     run = run or f"{Path(trace).stem}_{datetime.now():%Y%m%d_%H%M%S}"
     root = Path(__file__).parent / "results" / "live" / run
@@ -199,6 +208,7 @@ def main(
         max_len=max_len,
         block_size=block_size,
         deadline_s=deadline_s,
+        hint_port=hint_port,
     )
     results = run_live.remote(Path(trace).read_text(), run=run, **args)
     root.mkdir(parents=True, exist_ok=True)

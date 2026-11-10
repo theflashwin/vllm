@@ -58,11 +58,13 @@ for the demo and one cross-check.
   `server`. Check that the FS tier's storage supports O_DIRECT.
 - Raise the context cap as far as the card allows (`decode_scan.py` served a
   160k request on the A100) and record the token scale used.
-- Hint overhead (midpoint feedback): run `tier_lru` with `PREDICTOR=none`
-  next to `tier_lru` with `PREDICTOR=tool-nfh2`. The difference in resume TTFT
-  is what the hint-only requests cost the engine. See "Midpoint feedback".
+- Hint overhead (midpoint feedback): run `tier_lru` once with `HINT_PORT=`
+  (hint-only requests, as before) next to the default (UDP hints). The
+  difference in resume TTFT is what the hint-only requests cost the engine.
+  See "Midpoint feedback".
 - Exit: two `tier_lru` runs of `live35` agree within 10% at p50 and p90, and
-  `KVPLACE_LOG_HINTS=1` shows one hint line per hint-only request.
+  the `tier_reuse` summary shows the policy read about as many UDP hints as
+  the client sent (the last few can be unread when the run ends).
 
 **E1. Sustainable load (Nov 13-15).** `tier_lru` at 3-4 arrival rates
 (`tracelab --rebase-rate`). λ\* is the highest rate with p90 resume TTFT <= 5 s.
@@ -136,12 +138,17 @@ workaround is phased out so it doesn't add engine overhead in live runs."
   mode the CPU tier only sees requests that store or load a chunk.
 - Both arms of every comparison receive the same hint traffic, so ratios are
   fair. Absolute TTFT is not.
-- Plan: measure it in E0 (the `PREDICTOR=none` arm). Then replace it with a
-  message sent straight to the policy (a local socket the policy drains
-  before each eviction), so no request enters the engine. Do this before E1
-  or not at all: changing the hint path mid-way breaks comparability.
-- If the replacement slips, the paper reports the measured overhead and lists
-  the workaround as a limitation.
+- Replacement (written Nov 10, not yet run on a real server): the client
+  sends the estimate as a UDP datagram to the policy (`KVPLACE_HINT_ADDR`,
+  `replay --hint-addr`), and the policy reads pending datagrams before each
+  eviction and when a request finishes. No request enters the engine and no
+  padding block is stored. `pace_live.sbatch` uses it by default;
+  `modal_live.py` takes `--hint-port`.
+- Every run from E0 on uses UDP hints. Earlier runs used hint-only requests,
+  so their absolute TTFT is not comparable; `args.json` records
+  `hint_transport`.
+- Limitation to state in the paper: client and server must share a host. A
+  deployment would need a hint endpoint on the server.
 
 **CDFs (-0.3).** "Supplement the scalar p90 bar charts with full empirical
 CDFs." See the rule at the top of "Figures and tables". `requests.csv`

@@ -24,6 +24,13 @@ PY=${PY:-.venv/bin/python}
 VLLM=${VLLM:-.venv/bin/vllm}
 HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-600}
 DEADLINE_S=${DEADLINE_S:-}              # stop the replay and save rows after this
+# UDP port for post-response hints. Unset: hint-only requests through the engine.
+HINT_PORT=${HINT_PORT:-}
+HINT_TRANSPORT=request
+if [[ -n $HINT_PORT ]]; then
+  HINT_TRANSPORT=udp
+  export KVPLACE_HINT_ADDR=127.0.0.1:$HINT_PORT
+fi
 
 export PYTHONPATH="$PWD/research${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -87,7 +94,8 @@ cat > "$OUT/args.json" <<EOF
  "cpu_bytes": $CPU_BYTES,
  "max_len": $MAX_LEN,
  "block_size": $BLOCK_SIZE,
- "deadline_s": ${DEADLINE_S:-0}
+ "deadline_s": ${DEADLINE_S:-0},
+ "hint_transport": "$HINT_TRANSPORT"
 }
 EOF
 
@@ -113,7 +121,18 @@ for cfg in $CONFIGS; do
   $PY -m kvplace.replay "$TRACE" --url "http://localhost:$PORT" \
     --predictor "$PREDICTOR" --time-scale "$TIME_SCALE" --out "$dir" \
     --block-size "$BLOCK_SIZE" ${DEADLINE_S:+--deadline-s "$DEADLINE_S"} \
+    ${HINT_PORT:+--hint-addr "127.0.0.1:$HINT_PORT"} \
     | tee "$dir/summary.txt"
+  if [[ -n $HINT_PORT && $cfg == *reuse && ${KVPLACE_LOG_HINTS:-} == 1 ]]; then
+    sent=$(grep -c '^hint_udp,' "$dir/requests.csv" || true)
+    got=$(grep -c 'kvplace hint .*(udp)' "$dir/server.log" || true)
+    # The policy reads datagrams on its next call, so the last few can be unread.
+    echo "UDP hints: $sent sent, $got read by the policy" | tee -a "$dir/summary.txt"
+    if ((sent > 0 && got == 0)); then
+      echo "$cfg: the policy read no UDP hints" >&2
+      exit 1
+    fi
+  fi
   kill "$SERVER_PID"; wait "$SERVER_PID" 2>/dev/null || true
 done
 echo "results in $OUT"
