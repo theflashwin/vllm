@@ -46,6 +46,10 @@ METRIC_PREFIXES = (
     "vllm:external_prefix_cache",
     "vllm:prompt_tokens",
     "vllm:generation_tokens",
+    "vllm:request_queue_time_seconds",
+    "vllm:request_prefill_time_seconds",
+    "vllm:request_decode_time_seconds",
+    "vllm:num_preemptions",
 )
 
 
