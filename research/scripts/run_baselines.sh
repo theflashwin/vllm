@@ -19,8 +19,11 @@ TIME_SCALE=${TIME_SCALE:-1.0}
 PREDICTOR=${PREDICTOR:-tool}            # same hint-only traffic for all configs
 CONFIGS=${CONFIGS:-"gpu_only cpu_lru cpu_arc tier_lru tier_arc"}
 RUN=${RUN:-$(date +%Y%m%d_%H%M%S)}
-OUT=research/results/$RUN
+OUT=${OUT:-research/results/$RUN}
 PY=${PY:-.venv/bin/python}
+VLLM=${VLLM:-.venv/bin/vllm}
+HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-600}
+DEADLINE_S=${DEADLINE_S:-}              # stop the replay and save rows after this
 
 export PYTHONPATH="$PWD/research${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -55,11 +58,12 @@ set_args() {
 }
 
 wait_healthy() {
-  for _ in $(seq 600); do
+  for _ in $(seq "$HEALTH_TIMEOUT_S"); do
     curl -sf "localhost:$PORT/health" >/dev/null && return 0
     kill -0 "$SERVER_PID" 2>/dev/null || { echo "server died" >&2; return 1; }
     sleep 1
   done
+  echo "server not healthy after $HEALTH_TIMEOUT_S s" >&2
   return 1
 }
 
@@ -69,6 +73,23 @@ wait_healthy() {
 mkdir -p "$OUT"
 git rev-parse HEAD > "$OUT/vllm_commit.txt"
 cp "$TRACE" "$OUT/trace.jsonl"
+# Same keys as modal_live.py writes.
+# shellcheck disable=SC2086
+configs_json=$(printf '"%s", ' $CONFIGS)
+cat > "$OUT/args.json" <<EOF
+{
+ "trace": "$TRACE",
+ "gpu": "$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)",
+ "configs": [${configs_json%, }],
+ "predictor": "$PREDICTOR",
+ "time_scale": $TIME_SCALE,
+ "gpu_blocks": $GPU_BLOCKS,
+ "cpu_bytes": $CPU_BYTES,
+ "max_len": $MAX_LEN,
+ "block_size": $BLOCK_SIZE,
+ "deadline_s": ${DEADLINE_S:-0}
+}
+EOF
 
 for cfg in $CONFIGS; do
   echo "=== $cfg ==="
@@ -76,7 +97,7 @@ for cfg in $CONFIGS; do
   mkdir -p "$dir"
   rm -rf "$FS_DIR" && mkdir -p "$FS_DIR"
   set_args "$cfg"
-  .venv/bin/vllm serve "$MODEL" --port "$PORT" \
+  "$VLLM" serve "$MODEL" --port "$PORT" \
     --block-size "$BLOCK_SIZE" --max-model-len "$MAX_LEN" \
     --num-gpu-blocks-override "$GPU_BLOCKS" \
     --enable-prompt-tokens-details \
@@ -84,9 +105,14 @@ for cfg in $CONFIGS; do
   SERVER_PID=$!
   trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
   wait_healthy
+  # A buffered fs tier serves disk reads from the page cache.
+  if grep -q "O_DIRECT is not supported" "$dir/server.log"; then
+    echo "$cfg: fs tier fell back to buffered I/O; move FS_DIR" >&2
+    exit 1
+  fi
   $PY -m kvplace.replay "$TRACE" --url "http://localhost:$PORT" \
     --predictor "$PREDICTOR" --time-scale "$TIME_SCALE" --out "$dir" \
-    --block-size "$BLOCK_SIZE" \
+    --block-size "$BLOCK_SIZE" ${DEADLINE_S:+--deadline-s "$DEADLINE_S"} \
     | tee "$dir/summary.txt"
   kill "$SERVER_PID"; wait "$SERVER_PID" 2>/dev/null || true
 done
