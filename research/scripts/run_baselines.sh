@@ -85,6 +85,7 @@ cp "$TRACE" "$OUT/trace.jsonl"
 configs_json=$(printf '"%s", ' $CONFIGS)
 cat > "$OUT/args.json" <<EOF
 {
+ "model": "$MODEL",
  "trace": "$TRACE",
  "gpu": "$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)",
  "configs": [${configs_json%, }],

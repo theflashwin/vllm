@@ -36,12 +36,17 @@ Not claims:
 - **70B and shared slow disks.** Simulator only (+8-10% at best), so they are
   discussion, marked simulated, unless E4 confirms one live.
 
-Two things to state plainly in the paper:
+Things to state plainly in the paper:
 
 - Live baselines are stock vLLM (LRU on GPU and CPU). The "agent-aware GPU
   only" baseline from the midpoint exists only in the simulator.
 - Live runs so far use token scale 0.15, a 32k context cap and time scale
   0.2-0.5. E0 decides how much of that we can remove.
+- Model: PACE-ICE prohibits Qwen, so every run from E0 on uses Llama 3.1 8B
+  Instruct on an A100, with the CPU tier scaled to hold the same number of
+  tokens (4.19 GB; 128 KiB of KV per token against Qwen2.5-7B's 56 KiB). The
+  earlier Qwen runs (A10G, A100) are context, not headline evidence. The
+  simulator's cost files were measured for Qwen: remeasure them in E0.
 
 ## Experiments
 

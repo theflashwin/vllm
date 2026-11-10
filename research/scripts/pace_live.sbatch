@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=kvplace-live
 #SBATCH --partition=ice-gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
@@ -10,9 +10,11 @@
 # Live replay on a Slurm GPU node (PACE-ICE): the arms of modal_live.py, run
 # through scripts/run_baselines.sh. Results go to research/results/live/<run>/.
 #
-# The partition and GPU names above are unconfirmed. Check them with
-#   sinfo -o "%P %G %l %m"
-# and override on the command line, which takes precedence over #SBATCH lines.
+# Keep every run on one GPU type (a100 above); other types on ice-gpu are listed
+# by `sinfo -o "%P %G %l %m"`. Command-line options override #SBATCH lines.
+#
+# PACE-ICE prohibits Qwen models, so this runs Llama 3.1 8B (gated: accept the
+# license on Hugging Face and run `.venv/bin/hf auth login` once).
 #
 # One-time setup, from the vllm repo root in scratch (same vLLM as modal_live.py):
 #   uv venv --python 3.12 && uv pip install vllm==0.31.0 aiohttp
@@ -21,12 +23,15 @@
 # Usage, from the repo root (sbatch passes the environment through):
 #   TRACE=research/traces/live/live35.jsonl sbatch research/scripts/pace_live.sbatch
 #   TRACE=... CONFIGS="tier_reuse tier_lru" RUN=live35_b \
-#     sbatch --gres=gpu:A100:1 --mem=96G research/scripts/pace_live.sbatch
+#     sbatch research/scripts/pace_live.sbatch
 # Check a node without starting a server:
-#   TRACE=... DRY_RUN=1 srun --gres=gpu:1 --mem=64G bash research/scripts/pace_live.sbatch
+#   TRACE=... DRY_RUN=1 srun -p ice-gpu --gres=gpu:a100:1 --mem=64G -t 0:15:00 \
+#     bash research/scripts/pace_live.sbatch
 #
-# Defaults match results/live/live35_stable_a10g except for the hint transport
-# (add HINT_PORT= to reproduce it exactly). Arms run in CONFIGS order;
+# Defaults match results/live/live35_stable_a10g except for the model, the hint
+# transport (UDP), and CPU_BYTES, scaled so the CPU tier holds the same number of
+# tokens (Llama 3.1 8B keeps 128 KiB of KV per token, Qwen2.5-7B 56 KiB).
+# Arms run in CONFIGS order;
 # swap the order between repeats. results/ is gitignored: commit with `git add -f`.
 # The replay writes its rows only when an arm ends, so a job killed at the
 # walltime loses that arm. Set DEADLINE_S (per arm) so all arms fit in --time.
@@ -40,10 +45,11 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 job=${SLURM_JOB_ID:-$$}
 export TRACE=${TRACE:?set TRACE to a trace JSONL}
 export CONFIGS=${CONFIGS:-"tier_lru tier_reuse"}
+export MODEL=${MODEL:-meta-llama/Llama-3.1-8B-Instruct}
 export PREDICTOR=${PREDICTOR:-tool-nfh2}
 export TIME_SCALE=${TIME_SCALE:-0.5}
 export GPU_BLOCKS=${GPU_BLOCKS:-3800}
-export CPU_BYTES=${CPU_BYTES:-1835000000}
+export CPU_BYTES=${CPU_BYTES:-4194000000}
 export RUN=${RUN:-$(basename "$TRACE" .jsonl)_$job}
 export OUT=${OUT:-research/results/live/$RUN}
 export FS_DIR=${FS_DIR:-${TMPDIR:-/tmp}/kvplace_fs_$job}
@@ -57,6 +63,7 @@ export KVPLACE_LOG_HINTS=1
 VENV=${VENV:-$PWD/.venv}
 export PY=$VENV/bin/python VLLM=$VENV/bin/vllm
 
+[[ $MODEL != *[Qq][Ww][Ee][Nn]* ]] || die "Qwen models are prohibited on PACE-ICE"
 [[ -f $TRACE ]] || die "no trace at $TRACE"
 [[ -x $VLLM ]] || die "no vllm in $VENV; see the setup lines in this script"
 [[ -n ${HF_HOME:-} ]] || echo "pace_live: HF_HOME is unset; weights go to ~/.cache" >&2
@@ -91,6 +98,7 @@ rm -f "$probe"
   echo "fs_dir: $FS_DIR ($fstype), $(df -h "$FS_DIR" | tail -1)"
   echo "direct write, 256 MiB of zeros (rough): $wrote"
   echo "direct read: $read_back"
+  echo "model: $MODEL"
   echo "configs: $CONFIGS  predictor: $PREDICTOR  time_scale: $TIME_SCALE"
   echo "gpu_blocks: $GPU_BLOCKS  cpu_bytes: $CPU_BYTES  port: $PORT"
   echo "hint transport: ${HINT_PORT:+udp port }${HINT_PORT:-request}"
