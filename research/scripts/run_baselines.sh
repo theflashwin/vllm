@@ -10,6 +10,7 @@ set -euo pipefail
 MODEL=${MODEL:-Qwen/Qwen2.5-7B-Instruct}
 TRACE=${TRACE:?set TRACE to a trace JSONL}
 FS_DIR=${FS_DIR:-/tmp/kvplace_fs}
+[[ $FS_DIR == /* ]] || FS_DIR=$PWD/$FS_DIR  # the server runs in another directory
 PORT=${PORT:-8000}
 GPU_BLOCKS=${GPU_BLOCKS:-3000}          # forces GPU prefix-cache pressure
 CPU_BYTES=${CPU_BYTES:-10000000000}     # total across workers
@@ -106,11 +107,13 @@ for cfg in $CONFIGS; do
   mkdir -p "$dir"
   rm -rf "$FS_DIR" && mkdir -p "$FS_DIR"
   set_args "$cfg"
-  "$VLLM" serve "$MODEL" --port "$PORT" \
+  # Serve from the arm's directory: vLLM runs `python -m vllm...` subprocesses,
+  # and from the repo root those import the uncompiled vllm/ source tree.
+  (cd "$dir" && exec "$VLLM" serve "$MODEL" --port "$PORT" \
     --block-size "$BLOCK_SIZE" --max-model-len "$MAX_LEN" \
     --num-gpu-blocks-override "$GPU_BLOCKS" \
     --enable-prompt-tokens-details \
-    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} > "$dir/server.log" 2>&1 &
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}) > "$dir/server.log" 2>&1 &
   SERVER_PID=$!
   trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
   wait_healthy
