@@ -60,6 +60,9 @@ export PORT=${PORT:-$((20000 + job % 20000))}
 export HINT_PORT=${HINT_PORT-$((PORT + 1))}
 export HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-1800}
 export KVPLACE_LOG_HINTS=1
+# FlashInfer's sampler JIT-compiles at startup and needs ninja, which compute
+# nodes lack. Replays decode greedily, so the PyTorch sampler costs nothing.
+export VLLM_USE_FLASHINFER_SAMPLER=${VLLM_USE_FLASHINFER_SAMPLER:-0}
 VENV=${VENV:-$PWD/.venv}
 export PY=$VENV/bin/python VLLM=$VENV/bin/vllm
 
