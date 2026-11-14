@@ -25,6 +25,7 @@ PY=${PY:-.venv/bin/python}
 VLLM=${VLLM:-.venv/bin/vllm}
 HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-600}
 DEADLINE_S=${DEADLINE_S:-}              # stop the replay and save rows after this
+DISK_GB_S=${DISK_GB_S:-}                # emulate a disk this slow (GB/s); unset: real speed
 # UDP port for post-response hints. Unset: hint-only requests through the engine.
 HINT_PORT=${HINT_PORT:-}
 HINT_TRANSPORT=request
@@ -44,8 +45,13 @@ kv_config() {
            extra+=", \"cache_policy_module_path\": \"kvplace.vllm_policy\"" ;;
   esac
   if [[ $tiers == tier ]]; then
+    local tier="\"type\": \"fs\""
+    if [[ -n $DISK_GB_S ]]; then
+      tier="\"type\": \"SlowFileSystemTier\", \"module_path\": \"kvplace.slow_disk\""
+      tier+=", \"gb_per_s\": $DISK_GB_S"
+    fi
     extra+=", \"spec_name\": \"TieringOffloadingSpec\""
-    extra+=", \"secondary_tiers\": [{\"type\": \"fs\", \"root_dir\": \"$FS_DIR\"}]"
+    extra+=", \"secondary_tiers\": [{$tier, \"root_dir\": \"$FS_DIR\"}]"
   fi
   echo "{\"kv_connector\": \"OffloadingConnector\", \"kv_role\": \"kv_both\", \"kv_connector_extra_config\": {$extra}}"
 }
@@ -97,6 +103,7 @@ cat > "$OUT/args.json" <<EOF
  "max_len": $MAX_LEN,
  "block_size": $BLOCK_SIZE,
  "deadline_s": ${DEADLINE_S:-0},
+ "disk_gb_s": ${DISK_GB_S:-null},
  "hint_transport": "$HINT_TRANSPORT"
 }
 EOF

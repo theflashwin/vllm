@@ -24,6 +24,7 @@
 #   TRACE=research/traces/live/live35.jsonl sbatch research/scripts/pace_live.sbatch
 #   TRACE=... CONFIGS="tier_reuse tier_lru" RUN=live35_b \
 #     sbatch research/scripts/pace_live.sbatch
+#   TRACE=... CONFIGS=tier_lru DISK_GB_S=0.25 sbatch research/scripts/pace_live.sbatch
 # Check a node without starting a server:
 #   TRACE=... DRY_RUN=1 srun -p ice-gpu --gres=gpu:a100:1 --mem=64G -t 0:15:00 \
 #     bash research/scripts/pace_live.sbatch
@@ -53,6 +54,8 @@ export CPU_BYTES=${CPU_BYTES:-4194000000}
 export RUN=${RUN:-$(basename "$TRACE" .jsonl)_$job}
 export OUT=${OUT:-research/results/live/$RUN}
 export FS_DIR=${FS_DIR:-${TMPDIR:-/tmp}/kvplace_fs_$job}
+# Emulate a slower disk tier (GB/s, see kvplace/slow_disk.py). Unset: real speed.
+export DISK_GB_S=${DISK_GB_S:-}
 # GPU nodes are shared, so a fixed port can collide with another job.
 export PORT=${PORT:-$((20000 + job % 20000))}
 # Post-response hints go to the policy by UDP. HINT_PORT= (empty) sends them
@@ -101,6 +104,7 @@ rm -f "$probe"
   echo "fs_dir: $FS_DIR ($fstype), $(df -h "$FS_DIR" | tail -1)"
   echo "direct write, 256 MiB of zeros (rough): $wrote"
   echo "direct read: $read_back"
+  echo "disk tier limited to: ${DISK_GB_S:-none} GB/s"
   echo "model: $MODEL"
   echo "configs: $CONFIGS  predictor: $PREDICTOR  time_scale: $TIME_SCALE"
   echo "gpu_blocks: $GPU_BLOCKS  cpu_bytes: $CPU_BYTES  port: $PORT"
