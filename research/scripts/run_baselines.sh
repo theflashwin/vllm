@@ -26,6 +26,7 @@ VLLM=${VLLM:-.venv/bin/vllm}
 HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-600}
 DEADLINE_S=${DEADLINE_S:-}              # stop the replay and save rows after this
 DISK_GB_S=${DISK_GB_S:-}                # emulate a disk this slow (GB/s); unset: real speed
+DISK_SHARED=${DISK_SHARED:-}            # set: reads and writes share the DISK_GB_S device
 # UDP port for post-response hints. Unset: hint-only requests through the engine.
 HINT_PORT=${HINT_PORT:-}
 HINT_TRANSPORT=request
@@ -49,6 +50,7 @@ kv_config() {
     if [[ -n $DISK_GB_S ]]; then
       tier="\"type\": \"SlowFileSystemTier\", \"module_path\": \"kvplace.slow_disk\""
       tier+=", \"gb_per_s\": $DISK_GB_S"
+      if [[ -n $DISK_SHARED ]]; then tier+=", \"shared\": true"; fi
     fi
     extra+=", \"spec_name\": \"TieringOffloadingSpec\""
     extra+=", \"secondary_tiers\": [{$tier, \"root_dir\": \"$FS_DIR\"}]"
@@ -104,6 +106,7 @@ cat > "$OUT/args.json" <<EOF
  "block_size": $BLOCK_SIZE,
  "deadline_s": ${DEADLINE_S:-0},
  "disk_gb_s": ${DISK_GB_S:-null},
+ "disk_shared": $([[ -n $DISK_SHARED ]] && echo true || echo false),
  "hint_transport": "$HINT_TRANSPORT"
 }
 EOF

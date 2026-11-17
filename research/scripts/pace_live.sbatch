@@ -56,6 +56,8 @@ export OUT=${OUT:-research/results/live/$RUN}
 export FS_DIR=${FS_DIR:-${TMPDIR:-/tmp}/kvplace_fs_$job}
 # Emulate a slower disk tier (GB/s, see kvplace/slow_disk.py). Unset: real speed.
 export DISK_GB_S=${DISK_GB_S:-}
+# DISK_SHARED=1: reads and writes share that one device, as on a real disk.
+export DISK_SHARED=${DISK_SHARED:-}
 # GPU nodes are shared, so a fixed port can collide with another job.
 export PORT=${PORT:-$((20000 + job % 20000))}
 # Post-response hints go to the policy by UDP. HINT_PORT= (empty) sends them
@@ -71,6 +73,7 @@ export PY=$VENV/bin/python VLLM=$VENV/bin/vllm
 
 [[ $MODEL != *[Qq][Ww][Ee][Nn]* ]] || die "Qwen models are prohibited on PACE-ICE"
 [[ -f $TRACE ]] || die "no trace at $TRACE"
+[[ -z $DISK_SHARED || -n $DISK_GB_S ]] || die "DISK_SHARED needs DISK_GB_S"
 [[ -x $VLLM ]] || die "no vllm in $VENV; see the setup lines in this script"
 [[ -n ${HF_HOME:-} ]] || echo "pace_live: HF_HOME is unset; weights go to ~/.cache" >&2
 
@@ -104,7 +107,7 @@ rm -f "$probe"
   echo "fs_dir: $FS_DIR ($fstype), $(df -h "$FS_DIR" | tail -1)"
   echo "direct write, 256 MiB of zeros (rough): $wrote"
   echo "direct read: $read_back"
-  echo "disk tier limited to: ${DISK_GB_S:-none} GB/s"
+  echo "disk tier limited to: ${DISK_GB_S:-none} GB/s${DISK_SHARED:+, reads and writes shared}"
   echo "model: $MODEL"
   echo "configs: $CONFIGS  predictor: $PREDICTOR  time_scale: $TIME_SCALE"
   echo "gpu_blocks: $GPU_BLOCKS  cpu_bytes: $CPU_BYTES  port: $PORT"

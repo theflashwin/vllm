@@ -72,11 +72,35 @@ def _job(job_id: int, keys) -> TransferJob:
     )
 
 
-def test_tier_round_trips_at_the_set_bandwidth(tmp_path):
+def _aligned_kv() -> torch.Tensor:
+    """Page-aligned KV blocks, as O_DIRECT needs."""
     raw = torch.zeros(N_BLOCKS * BLOCK_ELEMENTS * 4 + mmap.PAGESIZE, dtype=torch.uint8)
     shift = -raw.data_ptr() % mmap.PAGESIZE
     nbytes = N_BLOCKS * BLOCK_ELEMENTS * 4
-    kv = raw[shift : shift + nbytes].view(torch.float32).view(N_BLOCKS, -1)
+    return raw[shift : shift + nbytes].view(torch.float32).view(N_BLOCKS, -1)
+
+
+def test_shared_disk_uses_one_device_for_reads_and_writes(tmp_path):
+    kv = _aligned_kv()
+    config = {
+        "type": "SlowFileSystemTier",
+        "module_path": "kvplace.slow_disk",
+        "gb_per_s": 1.0,
+        "root_dir": str(tmp_path),
+    }
+    for shared in (False, True):
+        tier = SecondaryTierFactory.create_secondary_tier(
+            {**config, "shared": shared}, memoryview(kv.numpy()), _spec()
+        )
+        try:
+            assert (tier.read_dev is tier.write_dev) == shared
+        finally:
+            tier.shutdown()
+
+
+def test_tier_round_trips_at_the_set_bandwidth(tmp_path):
+    kv = _aligned_kv()
+    nbytes = kv.numel() * 4
     kv[:] = torch.rand_like(kv)
     want = kv.clone()
     seconds = 0.2

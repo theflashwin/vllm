@@ -3,8 +3,9 @@
 Emulates a slower disk than the node has, so runs can make the disk tier the
 bottleneck. Each direction behaves like a serial device: a transfer of n bytes
 finishes no earlier than n / rate after the previous transfer in that
-direction ends. Reads and writes are limited separately, so the write-through
-traffic does not take read bandwidth; a real shared disk would be slower.
+direction ends. By default reads and writes are limited separately, so the
+write-through traffic does not take read bandwidth. With `shared`, both go
+through one device, as on a single real disk: writes delay reads.
 
 Secondary tier config (metrics keep the label "fs"):
     {"type": "SlowFileSystemTier", "module_path": "kvplace.slow_disk",
@@ -91,6 +92,7 @@ class SlowFileSystemTier(FileSystemTierManager):
     Args:
         gb_per_s: Read bandwidth.
         write_gb_per_s: Write bandwidth; defaults to gb_per_s.
+        shared: Reads and writes queue on one device at gb_per_s.
 
     """
 
@@ -99,10 +101,17 @@ class SlowFileSystemTier(FileSystemTierManager):
         *args,
         gb_per_s: float,
         write_gb_per_s: float | None = None,
+        shared: bool = False,
         tier_type: str = "fs",
         **kwargs,
     ) -> None:
         super().__init__(*args, tier_type="fs", **kwargs)
         self.read_dev = SerialDevice(gb_per_s * 1e9)
-        self.write_dev = SerialDevice((write_gb_per_s or gb_per_s) * 1e9)
+        if shared and write_gb_per_s is not None:
+            raise ValueError("shared disk takes no separate write_gb_per_s")
+        self.write_dev = (
+            self.read_dev
+            if shared
+            else SerialDevice((write_gb_per_s or gb_per_s) * 1e9)
+        )
         self._pool = _ThrottledPool(self._pool, self)
