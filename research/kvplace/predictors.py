@@ -29,6 +29,9 @@ from kvplace.trace import Session
 # (session, turn index, observed gaps so far in this session) -> hint
 Predictor = Callable[[Session, int, list[float]], ReuseHint | None]
 
+# Segment ends where the agent discards its context (see kvplace.tracelab).
+COMPACTION_ENDS = ("compaction", "max_context")
+
 
 def no_hints(session: Session, k: int, gaps: list[float]) -> ReuseHint | None:
     return None
@@ -91,7 +94,12 @@ class ToolMedian:
     called next (`session.meta["end_next_tool"]`), which a live agent knows
     once that response finishes. Only genuine session ends, or ends followed
     by a user message, are predicted as "human" waits. Traces without that
-    metadata fall back to "human" (same as `end_aware=False`)."""
+    metadata fall back to "human" (same as `end_aware=False`).
+
+    With `compaction_final` (and no `exact_final`), a segment that ends in a
+    compaction or a context-limit truncation is flagged final: the agent
+    knows it is about to discard that context. Other ends stay "human"
+    waits."""
 
     post_response = True
 
@@ -103,9 +111,11 @@ class ToolMedian:
         exact_final: bool = True,
         human_quantile: float | None = None,
         end_aware: bool = False,
+        compaction_final: bool = False,
     ):
         self.min_samples = min_samples
         self.end_aware = end_aware
+        self.compaction_final = compaction_final
         self.quantile = quantile
         self.exact_final = exact_final
         # Waits on the user are heavy-tailed and may be the session's end;
@@ -123,6 +133,11 @@ class ToolMedian:
         tool = session.turns[k].tool_name
         if k == len(session.turns) - 1:
             if self.exact_final:
+                return ReuseHint(session.session_id, k, None, final=True)
+            if (
+                self.compaction_final
+                and session.meta.get("end_reason") in COMPACTION_ENDS
+            ):
                 return ReuseHint(session.session_id, k, None, final=True)
             tool = "human"
             if self.end_aware:
@@ -243,10 +258,14 @@ def get_predictor(name: str) -> Predictor:
     `tool-nfh2` is `tool-nfh` that, at a segment's artificial end (compaction
     or truncation), predicts the tool the trace called next instead of a user
     wait (see `ToolMedian.end_aware`). Both take `:<window>[:<human quantile>]`,
-    e.g. `tool-nfh2:200:0.75`."""
+    e.g. `tool-nfh2:200:0.75`. `tool-nfhc` is `tool-nfh` that flags compaction
+    and truncation ends final (see `ToolMedian.compaction_final`)."""
     kind, _, arg = name.partition(":")
     human_q = None
     end_aware = False
+    compaction_final = False
+    if kind.endswith("-nfhc"):
+        kind, compaction_final = kind.removesuffix("c"), True
     if kind.endswith("-nfh2"):
         kind, end_aware = kind.removesuffix("2"), True
     if kind.endswith("-nfh"):
@@ -270,6 +289,7 @@ def get_predictor(name: str) -> Predictor:
             exact_final=exact_final,
             human_quantile=human_q,
             end_aware=end_aware,
+            compaction_final=compaction_final,
         )
     if kind == "toolp":
         return ToolProb(

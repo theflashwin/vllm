@@ -240,6 +240,25 @@ def test_nf_predictor_does_not_know_where_the_session_ends():
     assert not hint.final and hint.expected_reuse_s == 60.0
 
 
+def test_nfhc_predictor_flags_only_compaction_ends_final():
+    """The agent knows when it compacts its context, but not when the user
+    has left for good."""
+    from kvplace.predictors import get_predictor
+
+    p = get_predictor("tool-nfhc")
+    for _ in range(3):
+        p.observe("human", 60.0)
+    for reason, final in [
+        ("compaction", True),
+        ("max_context", True),
+        ("session_end", False),
+    ]:
+        s = Session("s", 0.0, [Turn(10, 1, "Bash", 1.0), Turn(10, 1)])
+        s.meta["end_reason"] = reason
+        assert p(s, 1, []).final == final
+        assert not p(s, 0, []).final
+
+
 def test_unhinted_idle_session_eventually_evicted_before_hinted_one():
     """A session that never got a prediction must not look "about to return"
     forever: once idle well past the default horizon it is evicted before a
