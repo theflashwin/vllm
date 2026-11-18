@@ -1,0 +1,4 @@
+deadline: stopped 2 of 70 sessions
+2506 requests in 14400s; resume TTFT p50=0.201 p90=4.578 p99=26.021
+2506 hints sent by UDP
+UDP hints: 2506 sent, 2506 read by the policy

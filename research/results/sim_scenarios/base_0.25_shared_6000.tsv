@@ -1,0 +1,5 @@
+policy	predictor	resume_ttft_p50	resume_ttft_p90	resume_ttft_p99	resume_frac_gpu	resume_frac_cpu	resume_frac_sec	resume_frac_lost	sec_to_cpu_prefetch_blocks	prefetch_wasted_blocks	cpu_to_sec_write_blocks	cpu_to_sec_writeback_blocks	hint_requests	warmup_late	warmup_cancelled
+lru	oracle	0.0607	0.2155	11.3587	0.9166	0.0561	0.0273	0.0000	0	0	54826	0	0	0	0
+lru	tool-nfh2	0.0610	0.2087	11.0756	0.9210	0.0527	0.0263	0.0000	0	0	57286	0	2460	5	70
+reuse_evict	oracle	0.0602	0.1707	4.9562	0.9259	0.0633	0.0108	0.0000	0	0	54826	0	0	0	0
+reuse_evict	tool-nfh2	0.0606	0.1981	12.5551	0.9115	0.0649	0.0236	0.0000	0	0	57284	0	2458	1	72

@@ -1,0 +1,15 @@
+{
+ "model": "meta-llama/Llama-3.1-8B-Instruct",
+ "trace": "research/traces/live/live35.jsonl",
+ "gpu": "NVIDIA L40S",
+ "configs": ["tier_reuse"],
+ "predictor": "tool-nfh2",
+ "time_scale": 0.5,
+ "gpu_blocks": 3800,
+ "cpu_bytes": 32000000000,
+ "max_len": 32768,
+ "block_size": 16,
+ "deadline_s": 3600,
+ "disk_gb_s": 0.25,
+ "hint_transport": "udp"
+}

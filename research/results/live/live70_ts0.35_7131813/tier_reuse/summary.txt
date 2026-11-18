@@ -1,0 +1,2 @@
+1172 requests in 11664s; resume TTFT p50=0.158 p90=3.125 p99=20.930
+UDP hints: 0 sent, 0 read by the policy

@@ -1,0 +1,3 @@
+policy	predictor	resume_ttft_p50	resume_ttft_p90	resume_ttft_p99	resume_frac_gpu	resume_frac_cpu	resume_frac_sec	resume_frac_lost	sec_to_cpu_prefetch_blocks	prefetch_wasted_blocks	cpu_to_sec_write_blocks	cpu_to_sec_writeback_blocks	hint_requests	warmup_late	warmup_cancelled
+lru	tool-nfh2:200:0.5	0.1023	0.4428	9.5115	0.9152	0.0610	0.0238	0.0000	0	0	80122	0	1155	0	17
+reuse_evict	tool-nfh2:200:0.5	0.1035	0.4428	10.4191	0.9121	0.0617	0.0262	0.0000	0	0	80119	0	1152	0	20

@@ -1,0 +1,16 @@
+{
+ "model": "meta-llama/Llama-3.1-8B-Instruct",
+ "trace": "research/traces/tl70/tl70_longctx.jsonl",
+ "gpu": "NVIDIA L40S",
+ "configs": ["tier_reuse"],
+ "predictor": "oracle",
+ "time_scale": 2.0,
+ "gpu_blocks": 7600,
+ "cpu_bytes": 20971520000,
+ "max_len": 65536,
+ "block_size": 16,
+ "deadline_s": 14400,
+ "disk_gb_s": null,
+ "disk_shared": false,
+ "hint_transport": "udp"
+}

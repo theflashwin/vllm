@@ -1,0 +1,2 @@
+811 requests in 2835s; resume TTFT p50=0.112 p90=0.228 p99=14.335
+811 hints sent by UDP

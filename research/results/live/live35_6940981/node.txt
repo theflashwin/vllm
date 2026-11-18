@@ -1,0 +1,10 @@
+host: atl1-1-02-009-32-0.pace.gatech.edu  job: 6940981  commit: d0ae70447f208184cd7ba0fbb5694bcce90d2f5d
+gpu: Tesla V100-PCIE-16GB, 16384 MiB
+mem: 65536 MB  cpus: ?
+fs_dir: /tmp/kvplace_fs_6940981 (xfs), /dev/mapper/sysvg-scratch  1.7T   12G  1.7T   1% /tmp
+direct write, 256 MiB of zeros (rough): 268435456 bytes (268 MB, 256 MiB) copied, 0.597843 s, 449 MB/s
+direct read: 268435456 bytes (268 MB, 256 MiB) copied, 0.712429 s, 377 MB/s
+model: meta-llama/Llama-3.1-8B-Instruct
+configs: tier_lru tier_reuse  predictor: tool-nfh2  time_scale: 0.5
+gpu_blocks: 3800  cpu_bytes: 4194000000  port: 20981
+hint transport: udp port 20982

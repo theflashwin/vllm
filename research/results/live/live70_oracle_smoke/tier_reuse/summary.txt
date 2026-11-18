@@ -1,0 +1,3 @@
+deadline: stopped 68 of 70 sessions
+55 requests in 600s; resume TTFT p50=0.145 p90=0.555 p99=0.783
+UDP hints: 0 sent, 0 read by the policy

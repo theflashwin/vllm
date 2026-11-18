@@ -1,0 +1,11 @@
+host: atl1-1-03-004-25-0.pace.gatech.edu  job: 7124914  commit: da48000f5806a941889768ff43465d5bbf97d696
+gpu: NVIDIA L40S, 46068 MiB
+mem: 65536 MB  cpus: 8
+fs_dir: /tmp/kvplace_fs_7124914 (xfs), /dev/md127       11T   75G   11T   1% /tmp
+direct write, 256 MiB of zeros (rough): 268435456 bytes (268 MB, 256 MiB) copied, 0.041936 s, 6.4 GB/s
+direct read: 268435456 bytes (268 MB, 256 MiB) copied, 0.12813 s, 2.1 GB/s
+disk tier limited to: 0.25 GB/s
+model: meta-llama/Llama-3.1-8B-Instruct
+configs: tier_reuse  predictor: tool-nfh2  time_scale: 2.0
+gpu_blocks: 3800  cpu_bytes: 12582912000  port: 24914
+hint transport: udp port 24915
